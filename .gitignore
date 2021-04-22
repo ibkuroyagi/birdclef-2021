@@ -1,0 +1,42 @@
+# general
+*~
+*.pyc
+\#*\#
+.\#*
+*DS_Store
+out.txt
+/build
+/dist
+doc/_build
+slurm-*.out
+tmp*
+.eggs/
+.hypothesis/
+.idea
+.backup/
+.pytest_cache/
+__pycache__/
+.coverage*
+coverage.xml*
+.vscode*
+.nfs*
+.python-version
+.worktree
+@eaDir/
+.ipynb_checkpoints/
+*.log
+*.pkl
+*.job
+# input dataset
+input/birdclef-2021/
+input/iterative-stratification-master/
+input/pretrained/
+# venv
+tools/venv/
+tools/apex/
+tools/*.out
+# results
+working/dump*/
+working/exp*/
+working/*.pt
+working/*.csv
