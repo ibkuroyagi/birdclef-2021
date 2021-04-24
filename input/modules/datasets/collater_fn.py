@@ -71,7 +71,7 @@ class FeatTrainCollater(object):
         if self.use_dializer:
             frame_mask_batch = []
         # select start point
-        cnt = 0
+        # cnt = 0
         for logmel, matrix_tp, time_list in zip(logmels, matrix_tp_list, all_time_list):
             l_spec = len(logmel)
             if self.random:

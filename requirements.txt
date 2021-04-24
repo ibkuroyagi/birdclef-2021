@@ -22,3 +22,4 @@ colorednoise
 efficientnet_pytorch
 ipykernel
 albumentations
+catalyst==20.12

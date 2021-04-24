@@ -31,6 +31,8 @@ coverage.xml*
 input/birdclef-2021/
 input/iterative-stratification-master/
 input/pretrained/
+input/pytorch-image-models/
+
 # venv
 tools/venv/
 tools/apex/
@@ -45,3 +47,8 @@ working/exp*/
 working/*.pt
 working/*.csv
 working/*.ipynb
+working2/dump*/
+working2/exp*/
+working2/*.pt
+working2/*.csv
+working2/*.ipynb
