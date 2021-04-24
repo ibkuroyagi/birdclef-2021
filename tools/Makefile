@@ -7,19 +7,20 @@ DOT:= .
 all: virtualenv
 
 centos:
-	virtualenv -p $(PYTHON) venv
-	. venv/bin/activate; pip3 install torch==1.8.1+cu111 torchvision==0.9.1+cu111 torchaudio==0.8.1 -f https://download.pytorch.org/whl/torch_stable.html
-	. venv/bin/activate; cd ../; pip install -r requirements.txt
-	. venv/bin/activate; mkdir ../input/; cd ../input/; kaggle competitions download \
-		-c birdclef-2021
-	cd ../input/; unzip birdclef-2021.zip -d birdclef-2021; \
-		rm birdclef-2021.zip
-	# . venv/bin/activate; mkdir ../input/; cd ../input/; kaggle datasets download \
+	virtualenv -p $(PYTHON) centos_venv
+	. centos_venv/bin/activate; pip3 install torch==1.8.1+cu111 torchvision==0.9.1+cu111 torchaudio==0.8.1 -f https://download.pytorch.org/whl/torch_stable.html
+	. centos_venv/bin/activate; cd ../; pip install -r requirements.txt
+	# . centos_venv/bin/activate; mkdir ../input/; cd ../input/; kaggle competitions download \
+	# 	-c birdclef-2021
+	# cd ../input/; unzip birdclef-2021.zip -d birdclef-2021; \
+	# 	rm birdclef-2021.zip
+	# . centos_venv/bin/activate; mkdir ../input/; cd ../input/; kaggle datasets download \
 	# 	-d yasufuminakama/iterative-stratification
 	# cd ../input/; unzip iterative-stratification.zip; rm iterative-stratification.zip
 virtualenv:
 	./setup_anaconda.sh venv conda_env
 	. ./activate_python.sh; conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch -c conda-forge
+	. ./activate_python.sh; conda env update -n conda_env -f conda_env.yaml
 	. ./activate_python.sh; mkdir ../input/; cd ../input/; kaggle competitions download \
 		-c birdclef-2021
 	cd ../input/; unzip birdclef-2021.zip -d birdclef-2021; \

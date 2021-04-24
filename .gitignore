@@ -36,6 +36,7 @@ tools/venv/
 tools/apex/
 tools/miniconda.sh
 tools/activate_python.sh
+tools/centos_venv/
 tools/*.out
 tools/tmp.sh
 # results
@@ -43,3 +44,4 @@ working/dump*/
 working/exp*/
 working/*.pt
 working/*.csv
+working/*.ipynb

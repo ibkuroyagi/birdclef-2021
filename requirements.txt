@@ -14,8 +14,11 @@ kaggle
 black
 flake8
 tensorflow
+albumentations
 librosa
 torchlibrosa
 ipywidgets
 colorednoise
 efficientnet_pytorch
+ipykernel
+albumentations
