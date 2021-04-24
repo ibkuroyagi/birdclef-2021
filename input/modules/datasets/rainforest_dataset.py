@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2020 Ibuki Kuroyanagi
+# Copyright 2021 Ibuki Kuroyanagi
 
 import logging
 import random
@@ -44,7 +44,7 @@ class RainForestDataset(Dataset):
             mode (list): Mode of dataset. [tp, all, test]
             allow_cache (bool): Whether to allow cache of the loaded files.
             use_on_the_fly (bool): Whether to use on the fly proprocess(don't use collater_fc).
-            config (dict): Setting dict for requir_prep=True.
+            config (dict): Setting dict for require_prep=True.
             seed (int): seed
         """
         # if seed is not None:
@@ -195,7 +195,7 @@ class RainForestDataset(Dataset):
         return len(self.use_file_list)
 
     def wave2spec(self, wave: np.ndarray):
-        """Transfom wave to log mel sprctrogram and apply augmentation.
+        """Transform wave to log mel spectorgram and apply augmentation on cpu.
 
         Args:
             wave (ndarray): Original wave form (T,)
@@ -217,7 +217,7 @@ class RainForestDataset(Dataset):
         return feats
 
     def _on_the_fly(self, wave: np.ndarray, time_list: np.ndarray, split=8):
-        """Return mel-spectrogram and clip-level label.
+        """Return mel-spectrogram and clip-level label on cpu.
 
         Args:
             wave (np.ndarray): wave form data(y,)

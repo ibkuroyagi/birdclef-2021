@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 2020 Ibuki Kuroyanai
-#  MIT License (https://opensource.org/licenses/MIT)
+# Copyright 2021 Ibuki Kuroyanai
 
 """Perform preprocessing and raw feature extraction."""
 import argparse

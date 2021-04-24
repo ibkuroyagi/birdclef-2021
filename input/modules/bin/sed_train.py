@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 2020 Ibuki Kuroyanagi
+# Copyright 2021 Ibuki Kuroyanagi
 
 """Train Sound Event Detection model."""
 
