@@ -34,7 +34,10 @@ input/pretrained/
 # venv
 tools/venv/
 tools/apex/
+tools/miniconda.sh
+tools/activate_python.sh
 tools/*.out
+tools/tmp.sh
 # results
 working/dump*/
 working/exp*/
