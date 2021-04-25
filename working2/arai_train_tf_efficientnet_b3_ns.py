@@ -58,13 +58,13 @@ class CFG:
     ######################
     transforms = {"train": [{"name": "Normalize"}], "valid": [{"name": "Normalize"}]}
     period = 20
-    n_mels = 224
+    n_mels = 128
     fmin = 20
     fmax = 16000
     n_fft = 2048
     hop_length = 512
     sample_rate = 32000
-    melspectrogram_parameters = {"n_mels": n_mels, "fmin": fmin, "fmax": fmax}
+    melspectrogram_parameters = {"n_mels": 224, "fmin": 20, "fmax": 16000}
 
     target_columns = [
         "acafly",
@@ -470,8 +470,8 @@ class CFG:
     # Loaders #
     ######################
     loader_params = {
-        "train": {"batch_size": 2, "num_workers": 2, "shuffle": True},
-        "valid": {"batch_size": 4, "num_workers": 2, "shuffle": False},
+        "train": {"batch_size": 16, "num_workers": 4, "shuffle": True},
+        "valid": {"batch_size": 32, "num_workers": 4, "shuffle": False},
     }
 
     ######################
@@ -483,7 +483,7 @@ class CFG:
     ######################
     # Model #
     ######################
-    base_model_name = "tf_efficientnet_b7_ns"
+    base_model_name = "tf_efficientnet_b3_ns"
     pooling = "max"
     pretrained = True
     num_classes = 397
@@ -1148,15 +1148,13 @@ def get_callbacks():
     ]
 
 
-# %%
-def get_runner(device: torch.device):
+def get_runner(device):
     return SupervisedRunner(
-        device=device, input_key="image", input_target_key="targets"
+        input_key="image", input_target_key="targets", device=device
     )
 
 
-# %% [markdown]
-# ## Training!
+# Training!
 
 # %%
 warnings.filterwarnings("ignore")
@@ -1172,7 +1170,7 @@ logger = init_logger(log_file=logdir / "train.log")
 # environment
 set_seed(CFG.seed)
 device = get_device()
-
+logger.info(f"{type(device)}, {device}")
 # validation
 splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
 
@@ -1213,11 +1211,14 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_la
         num_classes=CFG.num_classes,
         in_channels=CFG.in_channels,
     )
+    if i == 0:
+        logger.info(model)
     criterion = get_criterion()
     optimizer = get_optimizer(model)
     scheduler = get_scheduler(optimizer)
     callbacks = get_callbacks()
     runner = get_runner(device)
+    logger.info(runner)
     runner.train(
         model=model,
         criterion=criterion,
@@ -1231,10 +1232,8 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_la
         main_metric=CFG.main_metric,
         minimize_metric=CFG.minimize_metric,
     )
+    logger.info(f"Finish runner {i} fold.")
 
     del model, optimizer, scheduler
     gc.collect()
     torch.cuda.empty_cache()
-
-
-# %%

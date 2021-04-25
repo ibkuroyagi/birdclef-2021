@@ -24,17 +24,17 @@ conf=conf/Cnn14_DecisionLevelAtt.yaml
 # directory related
 datadir="../input/rfcx-species-audio-detection"
 dumpdir=dump
-expdir=exp                       # directory to save experiments
-tag="tf_efficientnet_b0_ns/base" # tag for manangement of the naming of experiments
+expdir=exp # directory to save experiments
+# tag for manangement of the naming of experiments
 cache_path="../input/pretrained/Cnn14_DecisionLevelAtt.pth"
 resume=""
 # evaluation related
 checkpoint="best_score" # path of checkpoint to be used for evaluation
-train_file="arai_train_tf_efficientnet_b7_ns"
+train_file="arai_train_tf_efficientnet_b3_ns"
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
-
+tag="${train_file}/base"
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 2: Network training."
     outdir=${expdir}/${tag}

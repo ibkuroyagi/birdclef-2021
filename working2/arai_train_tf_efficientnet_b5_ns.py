@@ -25,7 +25,7 @@ from timm.models.layers import SelectAdaptivePool2d
 from torch.optim.optimizer import Optimizer
 from torchlibrosa.stft import LogmelFilterBank, Spectrogram
 from torchlibrosa.augmentation import SpecAugmentation
-
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 # %% [markdown]
 # ## Config
 parser = argparse.ArgumentParser(
@@ -470,8 +470,8 @@ class CFG:
     # Loaders #
     ######################
     loader_params = {
-        "train": {"batch_size": 2, "num_workers": 2, "shuffle": True},
-        "valid": {"batch_size": 4, "num_workers": 2, "shuffle": False},
+        "train": {"batch_size": 4, "num_workers": 4, "shuffle": True},
+        "valid": {"batch_size": 8, "num_workers": 4, "shuffle": False},
     }
 
     ######################
@@ -483,7 +483,7 @@ class CFG:
     ######################
     # Model #
     ######################
-    base_model_name = "tf_efficientnet_b7_ns"
+    base_model_name = "tf_efficientnet_b5_ns"
     pooling = "max"
     pretrained = True
     num_classes = 397
@@ -549,7 +549,6 @@ def init_logger(log_file="train.log"):
     return logger
 
 
-# %% [markdown]
 # ## Dataset and Data Augmentations
 #
 # In this section, I define dataset that crops 20 second chunk. The output of this dataset is a pair of waveform and corresponding label.
@@ -1178,20 +1177,7 @@ splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
 
 # data
 train = pd.read_csv(CFG.train_csv)
-
-
-# %%
-# main loop
-for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_label"])):
-    if i not in CFG.folds:
-        continue
-    logger.info("=" * 120)
-    logger.info(f"Fold {i} Training")
-    logger.info("=" * 120)
-
-    trn_df = train.loc[trn_idx, :].reset_index(drop=True)
-    val_df = train.loc[val_idx, :].reset_index(drop=True)
-
+def datasets_fc(trn_df, val_df):
     loaders = {
         phase: torchdata.DataLoader(
             WaveformDataset(
@@ -1206,7 +1192,8 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_la
         )  # type: ignore
         for phase, df_ in zip(["train", "valid"], [trn_df, val_df])
     }
-
+    return loaders
+def train_fc(loaders):
     model = TimmSED(
         base_model_name=CFG.base_model_name,
         pretrained=CFG.pretrained,
@@ -1235,6 +1222,18 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_la
     del model, optimizer, scheduler
     gc.collect()
     torch.cuda.empty_cache()
+# main loop
+for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_label"])):
+    if i not in CFG.folds:
+        continue
+    logger.info("=" * 120)
+    logger.info(f"Fold {i} Training")
+    logger.info("=" * 120)
+
+    trn_df = train.loc[trn_idx, :].reset_index(drop=True)
+    val_df = train.loc[val_idx, :].reset_index(drop=True)
+    loaders = datasets_fc(trn_idx, val_idx)
+    utils.distributed_cmd_run(train_fc)
 
 
 # %%
