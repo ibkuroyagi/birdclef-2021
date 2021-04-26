@@ -2,6 +2,7 @@ import gc
 import os
 import argparse
 import random
+import sys
 import warnings
 
 import numpy as np
@@ -13,7 +14,7 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as torchdata
-
+import torchaudio.transforms as T
 from pathlib import Path
 from typing import List
 
@@ -22,8 +23,9 @@ from catalyst.dl import Runner, SupervisedRunner
 from sklearn import model_selection
 from sklearn import metrics
 from timm.models.layers import SelectAdaptivePool2d
+from multiprocessing import Manager
 from torch.optim.optimizer import Optimizer
-from torchlibrosa.stft import LogmelFilterBank, Spectrogram
+
 from torchlibrosa.augmentation import SpecAugmentation
 
 sys.path.append("../input/modules")
@@ -44,7 +46,7 @@ class CFG:
     epochs = 35
     train = True
     folds = [0, 1, 2, 3, 4]
-    img_size = 224
+    img_size = 128
     main_metric = "epoch_f1_at_05"
     minimize_metric = False
 
@@ -66,14 +68,14 @@ class CFG:
     n_fft = 2048
     hop_length = 512
     sample_rate = 32000
-    melspectrogram_parameters = {"n_mels": 224, "fmin": 20, "fmax": 16000}
+    melspectrogram_parameters = {"n_mels": 128, "fmin": 20, "fmax": 16000}
 
     ######################
     # Loaders #
     ######################
     loader_params = {
-        "train": {"batch_size": 16, "num_workers": 4, "shuffle": True},
-        "valid": {"batch_size": 32, "num_workers": 4, "shuffle": False},
+        "train": {"batch_size": 32, "num_workers": 4, "shuffle": True},
+        "valid": {"batch_size": 64, "num_workers": 4, "shuffle": False},
     }
 
     ######################
@@ -85,7 +87,7 @@ class CFG:
     ######################
     # Model #
     ######################
-    base_model_name = "tf_efficientnet_b3_ns"
+    base_model_name = "tf_efficientnet_b0_ns"
     pooling = "max"
     pretrained = True
     num_classes = 397
@@ -102,7 +104,7 @@ class CFG:
     ######################
     optimizer_name = "Adam"
     base_optimizer = "Adam"
-    optimizer_params = {"lr": 0.001}
+    optimizer_params = {"lr": 0.005}
     # For SAM optimizer
     base_optimizer = "Adam"
 
@@ -162,10 +164,11 @@ class WaveformDataset(torchdata.Dataset):
         self,
         df: pd.DataFrame,
         datadir: Path,
-        img_size=224,
+        img_size=128,
         waveform_transforms=None,
         period=20,
         validation=False,
+        allow_cache=True,
     ):
         self.df = df
         self.datadir = datadir
@@ -173,6 +176,11 @@ class WaveformDataset(torchdata.Dataset):
         self.waveform_transforms = waveform_transforms
         self.period = period
         self.validation = validation
+        # NOTE(ibuki): Manager is need to share memory in dataloader with num_workers > 0
+        self.allow_cache = allow_cache
+        self.manager = Manager()
+        self.caches = self.manager.list()
+        self.caches += [() for _ in range(len(df))]
 
     def __len__(self):
         return len(self.df)
@@ -181,37 +189,38 @@ class WaveformDataset(torchdata.Dataset):
         sample = self.df.loc[idx, :]
         wav_name = sample["filename"]
         ebird_code = sample["primary_label"]
-
-        y, sr = sf.read(self.datadir / ebird_code / wav_name)
-
-        len_y = len(y)
+        sr = 32000
+        if self.allow_cache and (len(self.caches[idx]) != 0):
+            load_y = self.caches[idx]
+        else:
+            load_y, sr = sf.read(self.datadir / ebird_code / wav_name)
+            load_y = np.nan_to_num(load_y)
+        len_y = len(load_y)
         effective_length = sr * self.period
         if len_y < effective_length:
-            new_y = np.zeros(effective_length, dtype=y.dtype)
+            new_y = np.zeros(effective_length, dtype=load_y.dtype)
             if not self.validation:
                 start = np.random.randint(effective_length - len_y)
             else:
                 start = 0
-            new_y[start : start + len_y] = y
+            new_y[start : start + len_y] = load_y
             y = new_y.astype(np.float32)
         elif len_y > effective_length:
             if not self.validation:
                 start = np.random.randint(len_y - effective_length)
             else:
                 start = 0
-            y = y[start : start + effective_length].astype(np.float32)
+            y = load_y[start : start + effective_length].astype(np.float32)
         else:
-            y = y.astype(np.float32)
-
-        y = np.nan_to_num(y)
+            y = load_y.astype(np.float32)
 
         if self.waveform_transforms:
             y = self.waveform_transforms(y)
 
-        y = np.nan_to_num(y)
-
         labels = np.zeros(len(target_columns), dtype=float)
         labels[target_columns.index(ebird_code)] = 1.0
+        if self.allow_cache:
+            self.caches[idx] = load_y
 
         return {"image": y, "targets": labels}
 
@@ -431,27 +440,13 @@ class TimmSED(nn.Module):
     ):
         super().__init__()
         # Spectrogram extractor
-        self.spectrogram_extractor = Spectrogram(
+        self.spectrogram_extractor = T.MelSpectrogram(
+            sample_rate=CFG.sample_rate,
             n_fft=CFG.n_fft,
-            hop_length=CFG.hop_length,
             win_length=CFG.n_fft,
-            window="hann",
-            center=True,
-            pad_mode="reflect",
-            freeze_parameters=True,
-        )
-
-        # Logmel feature extractor
-        self.logmel_extractor = LogmelFilterBank(
-            sr=CFG.sample_rate,
-            n_fft=CFG.n_fft,
+            hop_length=CFG.hop_length,
+            power=2.0,
             n_mels=CFG.n_mels,
-            fmin=CFG.fmin,
-            fmax=CFG.fmax,
-            ref=1.0,
-            amin=1e-10,
-            top_db=None,
-            freeze_parameters=True,
         )
 
         # Spec augmenter
@@ -484,15 +479,11 @@ class TimmSED(nn.Module):
         init_bn(self.bn0)
 
     def forward(self, input):
-        # (batch_size, 1, time_steps, freq_bins)
-        x = self.spectrogram_extractor(input)
-        x = self.logmel_extractor(x)  # (batch_size, 1, time_steps, mel_bins)
-
-        frames_num = x.shape[2]
-
-        x = x.transpose(1, 3)
+        # (batch_size, mel_bins, time_steps, 1)
+        x = self.spectrogram_extractor(input).unsqueeze(3)
+        frames_num = x.shape[1]
         x = self.bn0(x)
-        x = x.transpose(1, 3)
+        x = x.transpose(1, 3)  # (batch_size, 1, time_steps, freq_bins)
 
         if self.training:
             x = self.spec_augmenter(x)

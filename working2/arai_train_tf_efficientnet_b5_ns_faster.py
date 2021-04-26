@@ -2,6 +2,7 @@ import gc
 import os
 import argparse
 import random
+import sys
 import warnings
 
 import numpy as np
@@ -13,6 +14,7 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as torchdata
+import torchaudio.transforms as T
 
 from pathlib import Path
 from typing import List
@@ -23,7 +25,6 @@ from sklearn import model_selection
 from sklearn import metrics
 from timm.models.layers import SelectAdaptivePool2d
 from torch.optim.optimizer import Optimizer
-from torchlibrosa.stft import LogmelFilterBank, Spectrogram
 from torchlibrosa.augmentation import SpecAugmentation
 
 sys.path.append("../input/modules")
@@ -46,7 +47,7 @@ class CFG:
     folds = [0, 1, 2, 3, 4]
     img_size = 224
     main_metric = "epoch_f1_at_05"
-    minimize_metric = False
+    minimize_metric = True
 
     ######################
     # Data #
@@ -72,8 +73,8 @@ class CFG:
     # Loaders #
     ######################
     loader_params = {
-        "train": {"batch_size": 16, "num_workers": 4, "shuffle": True},
-        "valid": {"batch_size": 32, "num_workers": 4, "shuffle": False},
+        "train": {"batch_size": 4, "num_workers": 4, "shuffle": True},
+        "valid": {"batch_size": 8, "num_workers": 4, "shuffle": False},
     }
 
     ######################
@@ -85,7 +86,7 @@ class CFG:
     ######################
     # Model #
     ######################
-    base_model_name = "tf_efficientnet_b3_ns"
+    base_model_name = "tf_efficientnet_b5_ns"
     pooling = "max"
     pretrained = True
     num_classes = 397
@@ -431,29 +432,14 @@ class TimmSED(nn.Module):
     ):
         super().__init__()
         # Spectrogram extractor
-        self.spectrogram_extractor = Spectrogram(
+        self.spectrogram_extractor = T.MelSpectrogram(
+            sample_rate=CFG.sample_rate,
             n_fft=CFG.n_fft,
-            hop_length=CFG.hop_length,
             win_length=CFG.n_fft,
-            window="hann",
-            center=True,
-            pad_mode="reflect",
-            freeze_parameters=True,
-        )
-
-        # Logmel feature extractor
-        self.logmel_extractor = LogmelFilterBank(
-            sr=CFG.sample_rate,
-            n_fft=CFG.n_fft,
+            hop_length=CFG.hop_length,
+            power=2.0,
             n_mels=CFG.n_mels,
-            fmin=CFG.fmin,
-            fmax=CFG.fmax,
-            ref=1.0,
-            amin=1e-10,
-            top_db=None,
-            freeze_parameters=True,
         )
-
         # Spec augmenter
         self.spec_augmenter = SpecAugmentation(
             time_drop_width=64,
@@ -484,18 +470,14 @@ class TimmSED(nn.Module):
         init_bn(self.bn0)
 
     def forward(self, input):
-        # (batch_size, 1, time_steps, freq_bins)
-        x = self.spectrogram_extractor(input)
-        x = self.logmel_extractor(x)  # (batch_size, 1, time_steps, mel_bins)
-
-        frames_num = x.shape[2]
-
-        x = x.transpose(1, 3)
+        # (batch_size, mel_bins, time_steps, 1)
+        x = self.spectrogram_extractor(input).unsqueeze(3)
+        frames_num = x.shape[1]
         x = self.bn0(x)
         x = x.transpose(1, 3)
 
         if self.training:
-            x = self.spec_augmenter(x)
+            x = self.spec_augmenter(x)  # (batch_size, 1, time_steps, mel_bins)
 
         x = x.transpose(2, 3)
         # (batch_size, channels, freq, frames)
