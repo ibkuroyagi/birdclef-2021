@@ -45,7 +45,7 @@ class CFG:
     epochs = 35
     train = True
     folds = [0, 1, 2, 3, 4]
-    img_size = 128
+    img_size = 224
     main_metric = "epoch_f1_at_05"
     minimize_metric = True
 
@@ -60,21 +60,21 @@ class CFG:
     # Dataset #
     ######################
     transforms = {"train": [{"name": "Normalize"}], "valid": [{"name": "Normalize"}]}
-    period = 10
+    period = 20
     n_mels = 128
     fmin = 20
     fmax = 16000
     n_fft = 2048
     hop_length = 512
     sample_rate = 32000
-    melspectrogram_parameters = {"n_mels": 128, "fmin": 20, "fmax": 16000}
+    melspectrogram_parameters = {"n_mels": 224, "fmin": 20, "fmax": 16000}
 
     ######################
     # Loaders #
     ######################
     loader_params = {
-        "train": {"batch_size": 32, "num_workers": 4, "shuffle": True},
-        "valid": {"batch_size": 64, "num_workers": 4, "shuffle": False},
+        "train": {"batch_size": 2, "num_workers": 4, "shuffle": True},
+        "valid": {"batch_size": 4, "num_workers": 4, "shuffle": False},
     }
 
     ######################
@@ -86,7 +86,7 @@ class CFG:
     ######################
     # Model #
     ######################
-    base_model_name = "tf_efficientnet_b0_ns"
+    base_model_name = "tf_efficientnet_b7_ns"
     pooling = "max"
     pretrained = True
     num_classes = 397
@@ -163,7 +163,7 @@ class WaveformDataset(torchdata.Dataset):
         self,
         df: pd.DataFrame,
         datadir: Path,
-        img_size=128,
+        img_size=224,
         waveform_transforms=None,
         period=20,
         validation=False,
