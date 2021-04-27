@@ -8,7 +8,7 @@ all: virtualenv
 
 centos:
 	virtualenv -p $(PYTHON) centos_venv
-	. centos_venv/bin/activate; pip3 install torch==1.8.1+cu111 torchvision==0.9.1+cu111 torchaudio==0.8.1 -f https://download.pytorch.org/whl/torch_stable.html
+	. centos_venv/bin/activate; pip3 install torch==$(PYTORCH_VERSION)+cu111 torchvision==0.9.1+cu111 torchaudio==0.8.1 -f https://download.pytorch.org/whl/torch_stable.html
 	. centos_venv/bin/activate; cd ../; pip install -r requirements.txt
 	# . centos_venv/bin/activate; mkdir ../input/; cd ../input/; kaggle competitions download \
 	# 	-c birdclef-2021
@@ -27,9 +27,10 @@ virtualenv:
 		rm birdclef-2021.zip
 apex:
 	export CUDA_HOME=/usr/local/cuda-$(CUDA_VERSION)/
-	git clone https://github.com/NVIDIA/apex.git
-	. venv/bin/activate; cd apex; \
-		pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
+	rm -rf apex && git clone https://github.com/NVIDIA/apex.git
+	. ./activate_python.sh; cd apex; \
+		pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
+	touch apex.done
 
 clean:
 	rm -fr venv apex
