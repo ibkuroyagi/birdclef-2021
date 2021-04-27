@@ -31,10 +31,11 @@ resume=""
 # evaluation related
 checkpoint="best_score" # path of checkpoint to be used for evaluation
 train_file="arai_train_tf_efficientnet_b0_ns_faster"
+train_file="arai_train_tf_efficientnet_b7_ns_mgpu"
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
-tag="${train_file}/period10"
+tag="${train_file}/base"
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 2: Network training."
     outdir=${expdir}/${tag}

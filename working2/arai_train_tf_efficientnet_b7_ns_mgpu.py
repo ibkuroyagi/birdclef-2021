@@ -8,162 +8,164 @@ import warnings
 import numpy as np
 import pandas as pd
 import soundfile as sf
-import timm
 import torch
-import torch.optim as optim
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data as torchdata
-import torchaudio.transforms as T
 
 from pathlib import Path
-from typing import List
-
-from catalyst.core import Callback, CallbackOrder, IRunner
-from catalyst.dl import Runner, SupervisedRunner
+from tqdm import tqdm
+from collections import defaultdict
+from tensorboardX import SummaryWriter
 from sklearn import model_selection
 from sklearn import metrics
-from timm.models.layers import SelectAdaptivePool2d
-from torch.optim.optimizer import Optimizer
-from torchlibrosa.augmentation import SpecAugmentation
 
 sys.path.append("../input/modules")
-from utils import target_columns
+import losses  # noqa: E402
+import optimizers  # noqa: E402
+from models import TimmSED  # noqa: E402
+from utils import target_columns  # noqa: E402
+from utils import init_logger  # noqa: E402
+from utils import set_seed  # noqa: E402
+
+ALL_DATA = 871 + 62874
+BATCH_SIZE = 32
 
 # ## Config
 parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
 )
 parser.add_argument("--outdir", type=str, required=True, help="name of outdir.")
+
+parser.add_argument(
+    "--rank",
+    "--local_rank",
+    default=0,
+    type=int,
+    help="rank for distributed training. no need to explictly specify.",
+)
 args = parser.parse_args()
-# %%
-class CFG:
+args.distributed = False
+if not torch.cuda.is_available():
+    device = torch.device("cpu")
+else:
+    device = torch.device("cuda")
+    torch.cuda.set_device(args.rank)
+    if "WORLD_SIZE" in os.environ:
+        args.world_size = int(os.environ["WORLD_SIZE"])
+        args.distributed = args.world_size > 1
+    if args.distributed:
+        torch.distributed.init_process_group(backend="nccl", init_method="env://")
+# suppress logger for distributed training
+if args.rank != 0:
+    sys.stdout = open(os.devnull, "w")
+
+config = {
     ######################
     # Globals #
     ######################
-    seed = 1213
-    epochs = 35
-    train = True
-    folds = [0, 1, 2, 3, 4]
-    img_size = 224
-    main_metric = "epoch_f1_at_05"
-    minimize_metric = True
-
+    "seed": 1213,
+    "epochs": 20,
+    "train": True,
+    "folds": [0, 1, 2, 3, 4],
+    "img_size": 128,
+    ######################
+    # Interval setting #
+    ######################
+    "eval_interval_epochs": 1,
     ######################
     # Data #
     ######################
-    train_datadir = Path("../input/birdclef-2021/train_short_audio")
-    train_csv = "../input/birdclef-2021/train_metadata.csv"
-    train_soundscape = "../input/birdclef-2021/train_soundscape_labels.csv"
-
+    "train_datadir": Path("../input/birdclef-2021/train_short_audio"),
+    "train_csv": "../input/birdclef-2021/train_metadata.csv",
+    "train_soundscape": "../input/birdclef-2021/train_soundscape_labels.csv",
     ######################
     # Dataset #
     ######################
-    transforms = {"train": [{"name": "Normalize"}], "valid": [{"name": "Normalize"}]}
-    period = 20
-    n_mels = 128
-    fmin = 20
-    fmax = 16000
-    n_fft = 2048
-    hop_length = 512
-    sample_rate = 32000
-    melspectrogram_parameters = {"n_mels": 224, "fmin": 20, "fmax": 16000}
-
+    "transforms": {"train": [{"name": "Normalize"}], "valid": [{"name": "Normalize"}]},
+    "period": 20,
+    "n_mels": 128,
+    "fmin": 20,
+    "fmax": 16000,
+    "n_fft": 2048,
+    "hop_length": 512,
+    "sample_rate": 32000,
+    "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
+    "accum_grads": 1,
     ######################
     # Loaders #
     ######################
-    loader_params = {
-        "train": {"batch_size": 2, "num_workers": 4, "shuffle": True},
-        "valid": {"batch_size": 4, "num_workers": 4, "shuffle": False},
-    }
-
+    "loader_params": {
+        "train": {"batch_size": BATCH_SIZE, "num_workers": 2, "shuffle": True},
+        "valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2, "shuffle": False},
+    },
     ######################
     # Split #
     ######################
-    split = "StratifiedKFold"
-    split_params = {"n_splits": 5, "shuffle": True, "random_state": 1213}
-
+    "split": "StratifiedKFold",
+    "split_params": {"n_splits": 5, "shuffle": True, "random_state": 1213},
     ######################
     # Model #
     ######################
-    base_model_name = "tf_efficientnet_b7_ns"
-    pooling = "max"
-    pretrained = True
-    num_classes = 397
-    in_channels = 1
-
+    "base_model_name": "tf_efficientnet_b0_ns",
+    "pooling": "max",
+    "pretrained": True,
+    "num_classes": 397,
+    "in_channels": 1,
     ######################
     # Criterion #
     ######################
-    loss_name = "BCEFocal2WayLoss"
-    loss_params: dict = {}
-
+    "loss_type": "BCEFocal2WayLoss",
+    "loss_params": {},
     ######################
     # Optimizer #
     ######################
-    optimizer_name = "Adam"
-    base_optimizer = "Adam"
-    optimizer_params = {"lr": 0.001}
+    "optimizer_type": "Adam",
+    "optimizer_params": {"lr": 0.001},
     # For SAM optimizer
-    base_optimizer = "Adam"
-
+    "base_optimizer": "Adam",
     ######################
     # Scheduler #
     ######################
-    scheduler_name = "CosineAnnealingLR"
-    scheduler_params = {"T_max": 10}
+    "scheduler_type": "CosineAnnealingLR",
+    "scheduler_params": {"T_max": 10},
+}
+config.update(vars(args))
 
-
-# %%
 # this notebook is by default run on debug mode (only train one epoch).
 # If you'd like to get the results on par with that of inference notebook, you'll need to train the model around 30 epochs
 DEBUG = False
 if DEBUG:
-    CFG.epochs = 1
+    config["epochs"] = 1
+config["save_interval_steps"] = ALL_DATA // (
+    BATCH_SIZE * config["n_gpu"] * config["accum_grads"]
+)
+config["train_max_steps"] = config["epochs"] * config["save_interval_steps"]
+warnings.filterwarnings("ignore")
 
+logdir = Path(args.outdir)
+logdir.mkdir(exist_ok=True, parents=True)
+if (logdir / "train.log").exists():
+    os.remove(logdir / "train.log")
+logger = init_logger(log_file=logdir / "train.log")
+for key, value in config.items():
+    logger.info(f"{key} = {value}")
+set_seed(config["seed"])
+# check distributed training
+if args.distributed:
+    logger.info(f"device:{device}")
+    logger.info(f"args.rank:{args.rank}")
+    logger.info(f"os.environ:{os.environ}")
+    logger.info(f"args.world_size:{args.world_size}")
+    logger.info(f"args.distributed:{args.distributed}")
 
-# %%
-def set_seed(seed=42):
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-def get_device() -> torch.device:
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def init_logger(log_file="train.log"):
-    from logging import getLogger, INFO, FileHandler, Formatter, StreamHandler
-
-    logger = getLogger(__name__)
-    logger.setLevel(INFO)
-    handler1 = StreamHandler()
-    handler1.setFormatter(Formatter("%(message)s"))
-    handler2 = FileHandler(filename=log_file)
-    handler2.setFormatter(Formatter("%(message)s"))
-    logger.addHandler(handler1)
-    logger.addHandler(handler2)
-    return logger
-
-
-# %% [markdown]
-# ## Dataset and Data Augmentations
-#
 # In this section, I define dataset that crops 20 second chunk. The output of this dataset is a pair of waveform and corresponding label.
 
-# %%
+
 class WaveformDataset(torchdata.Dataset):
     def __init__(
         self,
         df: pd.DataFrame,
         datadir: Path,
-        img_size=224,
+        img_size=128,
         waveform_transforms=None,
         period=20,
         validation=False,
@@ -219,7 +221,7 @@ class WaveformDataset(torchdata.Dataset):
 
 # %%
 def get_transforms(phase: str):
-    transforms = CFG.transforms
+    transforms = config["transforms"]
     if transforms is None:
         return None
     else:
@@ -256,516 +258,461 @@ class Compose:
         return y
 
 
-# %% [markdown]
-# ## Model Definition
-#
-# In this notebook, I will use a model for SED task.
+class SEDTrainer(object):
+    """Customized trainer module for SED training."""
 
-# %%
-def init_layer(layer):
-    nn.init.xavier_uniform_(layer.weight)
+    def __init__(
+        self,
+        steps,
+        epochs,
+        data_loader,
+        model,
+        criterion,
+        optimizer,
+        scheduler,
+        config,
+        train_sampler=None,
+        device=torch.device("cpu"),
+        train=False,
+        save_name="",
+    ):
+        """Initialize trainer.
 
-    if hasattr(layer, "bias"):
-        if layer.bias is not None:
-            layer.bias.data.fill_(0.0)
-
-
-def init_bn(bn):
-    bn.bias.data.fill_(0.0)
-    bn.weight.data.fill_(1.0)
-
-
-def init_weights(model):
-    classname = model.__class__.__name__
-    if classname.find("Conv2d") != -1:
-        nn.init.xavier_uniform_(model.weight, gain=np.sqrt(2))
-        model.bias.data.fill_(0)
-    elif classname.find("BatchNorm") != -1:
-        model.weight.data.normal_(1.0, 0.02)
-        model.bias.data.fill_(0)
-    elif classname.find("GRU") != -1:
-        for weight in model.parameters():
-            if len(weight.size()) > 1:
-                nn.init.orghogonal_(weight.data)
-    elif classname.find("Linear") != -1:
-        model.weight.data.normal_(0, 0.01)
-        model.bias.data.zero_()
-
-
-def do_mixup(x: torch.Tensor, mixup_lambda: torch.Tensor):
-    """Mixup x of even indexes (0, 2, 4, ...) with x of odd indexes
-    (1, 3, 5, ...).
-    Args:
-      x: (batch_size * 2, ...)
-      mixup_lambda: (batch_size * 2,)
-    Returns:
-      out: (batch_size, ...)
-    """
-    out = (
-        x[0::2].transpose(0, -1) * mixup_lambda[0::2]
-        + x[1::2].transpose(0, -1) * mixup_lambda[1::2]
-    ).transpose(0, -1)
-    return out
-
-
-class Mixup(object):
-    def __init__(self, mixup_alpha, random_seed=1234):
-        """Mixup coefficient generator."""
-        self.mixup_alpha = mixup_alpha
-        self.random_state = np.random.RandomState(random_seed)
-
-    def get_lambda(self, batch_size):
-        """Get mixup random coefficients.
         Args:
-          batch_size: int
-        Returns:
-          mixup_lambdas: (batch_size,)
+            steps (int): Initial global steps.
+            epochs (int): Initial global epochs.
+            data_loader (dict): Dict of data loaders. It must contrain "train" and "dev" loaders.
+            train_sampler (sampler): sampler. If you use multi-gpu you need to define.
+            model (dict): Dict of models. It must contrain "generator" and "discriminator" models.
+            criterion (torch.nn): It must contrain "stft" and "mse" criterions.
+            optimizer (object): Optimizers.
+            scheduler (object): Schedulers.
+            config (dict): Config dict loaded from yaml format configuration file.
+            device (torch.deive): Pytorch device instance.
+            train (bool): Select mode of trainer.
         """
-        mixup_lambdas = []
-        for n in range(0, batch_size, 2):
-            lam = self.random_state.beta(self.mixup_alpha, self.mixup_alpha, 1)[0]
-            mixup_lambdas.append(lam)
-            mixup_lambdas.append(1.0 - lam)
+        self.steps = steps
+        self.epochs = epochs
+        self.data_loader = data_loader
+        self.train_sampler = train_sampler
+        self.model = model
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.config = config
+        self.device = device
+        self.train = train
+        if train:
+            self.writer = SummaryWriter(config["outdir"])
+        self.save_name = save_name
 
-        return torch.from_numpy(np.array(mixup_lambdas, dtype=np.float32))
+        self.finish_train = False
+        self.best_score = 0
+        self.n_target = 397
+        self.total_train_loss = defaultdict(float)
+        self.epoch_train_loss = defaultdict(float)
+        self.epoch_valid_loss = defaultdict(float)
+        self.valid_metric = defaultdict(float)
+        self.train_pred_epoch = np.empty((0, self.n_target))
+        # self.train_pred_frame_epoch = torch.empty(
+        #     (0, config["l_target"], config["n_class"])
+        # ).to(device)
+        self.train_y_epoch = np.empty((0, self.n_target))
+        # self.train_y_frame_epoch = torch.empty(
+        #     (0, config["l_target"], config["n_class"])
+        # ).to(device)
+        self.valid_pred_epoch = np.empty((0, self.n_target))
+        # self.valid_pred_frame_epoch = torch.empty(
+        #     (0, config["l_target"], config["n_class"])
+        # ).to(device)
+        self.valid_y_epoch = np.empty((0, self.n_target))
+        # self.valid_y_frame_epoch = torch.empty(
+        #     (0, config["l_target"], config["n_class"])
+        # ).to(device)
+        self.n_eval_split = config["n_eval_split"]
+        self.last_checkpoint = ""
+        self.forward_count = 0
 
-
-def interpolate(x: torch.Tensor, ratio: int):
-    """Interpolate data in time domain. This is used to compensate the
-    resolution reduction in downsampling of a CNN.
-    Args:
-      x: (batch_size, time_steps, classes_num)
-      ratio: int, ratio to interpolate
-    Returns:
-      upsampled: (batch_size, time_steps * ratio, classes_num)
-    """
-    (batch_size, time_steps, classes_num) = x.shape
-    upsampled = x[:, :, None, :].repeat(1, 1, ratio, 1)
-    upsampled = upsampled.reshape(batch_size, time_steps * ratio, classes_num)
-    return upsampled
-
-
-def pad_framewise_output(framewise_output: torch.Tensor, frames_num: int):
-    """Pad framewise_output to the same length as input frames. The pad value
-    is the same as the value of the last frame.
-    Args:
-      framewise_output: (batch_size, frames_num, classes_num)
-      frames_num: int, number of frames to pad
-    Outputs:
-      output: (batch_size, frames_num, classes_num)
-    """
-    output = F.interpolate(
-        framewise_output.unsqueeze(1),
-        size=(frames_num, framewise_output.size(2)),
-        align_corners=True,
-        mode="bilinear",
-    ).squeeze(1)
-
-    return output
-
-
-def gem(x: torch.Tensor, p=3, eps=1e-6):
-    return F.avg_pool2d(x.clamp(min=eps).pow(p), (x.size(-2), x.size(-1))).pow(1.0 / p)
-
-
-class GeM(nn.Module):
-    def __init__(self, p=3, eps=1e-6):
-        super().__init__()
-        self.p = nn.Parameter(torch.ones(1) * p)
-        self.eps = eps
-
-    def forward(self, x):
-        return gem(x, p=self.p, eps=self.eps)
-
-    def __repr__(self):
-        return (
-            self.__class__.__name__
-            + f"(p={self.p.data.tolist()[0]:.4f}, eps={self.eps})"
+    def run(self):
+        """Run training."""
+        self.tqdm = tqdm(
+            initial=self.steps, total=self.config["train_max_steps"], desc="[train]"
         )
+        while True:
+            # train one epoch
+            self._train_epoch()
+            self._valid_epoch()
 
+            # check whether training is finished
+            if self.finish_train:
+                break
 
-class AttBlockV2(nn.Module):
-    def __init__(self, in_features: int, out_features: int, activation="linear"):
-        super().__init__()
+        self.tqdm.close()
+        logger.info("Finished training.")
 
-        self.activation = activation
-        self.att = nn.Conv1d(
-            in_channels=in_features,
-            out_channels=out_features,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-            bias=True,
-        )
-        self.cla = nn.Conv1d(
-            in_channels=in_features,
-            out_channels=out_features,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-            bias=True,
-        )
+    def save_checkpoint(self, checkpoint_path, save_model_only=True):
+        """Save checkpoint.
 
-        self.init_weights()
-
-    def init_weights(self):
-        init_layer(self.att)
-        init_layer(self.cla)
-
-    def forward(self, x):
-        # x: (n_samples, n_in, n_time)
-        norm_att = torch.softmax(torch.tanh(self.att(x)), dim=-1)
-        cla = self.nonlinear_transform(self.cla(x))
-        x = torch.sum(norm_att * cla, dim=2)
-        return x, norm_att, cla
-
-    def nonlinear_transform(self, x):
-        if self.activation == "linear":
-            return x
-        elif self.activation == "sigmoid":
-            return torch.sigmoid(x)
-
-
-class TimmSED(nn.Module):
-    def __init__(
-        self, base_model_name: str, pretrained=False, num_classes=24, in_channels=1
-    ):
-        super().__init__()
-        # Spectrogram extractor
-        self.spectrogram_extractor = T.MelSpectrogram(
-            sample_rate=CFG.sample_rate,
-            n_fft=CFG.n_fft,
-            win_length=CFG.n_fft,
-            hop_length=CFG.hop_length,
-            power=2.0,
-            n_mels=CFG.n_mels,
-        )
-        # Spec augmenter
-        self.spec_augmenter = SpecAugmentation(
-            time_drop_width=64,
-            time_stripes_num=2,
-            freq_drop_width=8,
-            freq_stripes_num=2,
-        )
-
-        self.bn0 = nn.BatchNorm2d(CFG.n_mels)
-
-        base_model = timm.create_model(
-            base_model_name, pretrained=pretrained, in_chans=in_channels
-        )
-        layers = list(base_model.children())[:-2]
-        self.encoder = nn.Sequential(*layers)
-
-        if hasattr(base_model, "fc"):
-            in_features = base_model.fc.in_features
-        else:
-            in_features = base_model.classifier.in_features
-        self.fc1 = nn.Linear(in_features, in_features, bias=True)
-        self.att_block = AttBlockV2(in_features, num_classes, activation="sigmoid")
-
-        self.init_weight()
-
-    def init_weight(self):
-        init_layer(self.fc1)
-        init_bn(self.bn0)
-
-    def forward(self, input):
-        # (batch_size, mel_bins, time_steps, 1)
-        x = self.spectrogram_extractor(input).unsqueeze(3)
-        frames_num = x.shape[1]
-        x = self.bn0(x)
-        x = x.transpose(1, 3)
-
-        if self.training:
-            x = self.spec_augmenter(x)  # (batch_size, 1, time_steps, mel_bins)
-
-        x = x.transpose(2, 3)
-        # (batch_size, channels, freq, frames)
-        x = self.encoder(x)
-
-        # (batch_size, channels, frames)
-        x = torch.mean(x, dim=2)
-
-        # channel smoothing
-        x1 = F.max_pool1d(x, kernel_size=3, stride=1, padding=1)
-        x2 = F.avg_pool1d(x, kernel_size=3, stride=1, padding=1)
-        x = x1 + x2
-
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = x.transpose(1, 2)
-        x = F.relu_(self.fc1(x))
-        x = x.transpose(1, 2)
-        x = F.dropout(x, p=0.5, training=self.training)
-        (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
-        logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
-        segmentwise_logit = self.att_block.cla(x).transpose(1, 2)
-        segmentwise_output = segmentwise_output.transpose(1, 2)
-
-        interpolate_ratio = frames_num // segmentwise_output.size(1)
-
-        # Get framewise output
-        framewise_output = interpolate(segmentwise_output, interpolate_ratio)
-        framewise_output = pad_framewise_output(framewise_output, frames_num)
-
-        framewise_logit = interpolate(segmentwise_logit, interpolate_ratio)
-        framewise_logit = pad_framewise_output(framewise_logit, frames_num)
-
-        output_dict = {
-            "framewise_output": framewise_output,
-            "segmentwise_output": segmentwise_output,
-            "logit": logit,
-            "framewise_logit": framewise_logit,
-            "clipwise_output": clipwise_output,
+        Args:
+            checkpoint_path (str): Checkpoint path to be saved.
+            save_model_only (bool): Whether to save model parameters only.
+        """
+        state_dict = {
+            "steps": self.steps,
+            "epochs": self.epochs,
+            "best_score": self.best_score,
         }
-
-        return output_dict
-
-
-# %% [markdown]
-# ## Losses
-
-# %%
-# https://www.kaggle.com/c/rfcx-species-audio-detection/discussion/213075
-class BCEFocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2.0):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-
-    def forward(self, preds, targets):
-        bce_loss = nn.BCEWithLogitsLoss(reduction="none")(preds, targets)
-        probas = torch.sigmoid(preds)
-        loss = (
-            targets * self.alpha * (1.0 - probas) ** self.gamma * bce_loss
-            + (1.0 - targets) * probas ** self.gamma * bce_loss
-        )
-        loss = loss.mean()
-        return loss
-
-
-class BCEFocal2WayLoss(nn.Module):
-    def __init__(self, weights=[1, 1], class_weights=None):
-        super().__init__()
-
-        self.focal = BCEFocalLoss()
-
-        self.weights = weights
-
-    def forward(self, input, target):
-        input_ = input["logit"]
-        target = target.float()
-
-        framewise_output = input["framewise_logit"]
-        clipwise_output_with_max, _ = framewise_output.max(dim=1)
-
-        loss = self.focal(input_, target)
-        aux_loss = self.focal(clipwise_output_with_max, target)
-
-        return self.weights[0] * loss + self.weights[1] * aux_loss
-
-
-# %%
-__CRITERIONS__ = {"BCEFocalLoss": BCEFocalLoss, "BCEFocal2WayLoss": BCEFocal2WayLoss}
-
-
-def get_criterion():
-    if hasattr(nn, CFG.loss_name):
-        return nn.__getattribute__(CFG.loss_name)(**CFG.loss_params)
-    elif __CRITERIONS__.get(CFG.loss_name) is not None:
-        return __CRITERIONS__[CFG.loss_name](**CFG.loss_params)
-    else:
-        raise NotImplementedError
-
-
-# %% [markdown]
-# ## Training Utilities
-#
-# Optimizers, Schedulers, Callbacks and the Runner
-
-# %%
-# Custom optimizer
-__OPTIMIZERS__ = {}
-
-
-def get_optimizer(model: nn.Module):
-    optimizer_name = CFG.optimizer_name
-    if optimizer_name == "SAM":
-        base_optimizer_name = CFG.base_optimizer
-        if __OPTIMIZERS__.get(base_optimizer_name) is not None:
-            base_optimizer = __OPTIMIZERS__[base_optimizer_name]
+        if self.config["distributed"]:
+            state_dict["model"] = self.model.module.state_dict()
         else:
-            base_optimizer = optim.__getattribute__(base_optimizer_name)
-        return SAM(model.parameters(), base_optimizer, **CFG.optimizer_params)
+            state_dict["model"] = self.model.state_dict()
+        if not save_model_only:
+            state_dict["optimizer"] = self.optimizer.state_dict()
+            if self.scheduler is not None:
+                state_dict["scheduler"] = self.scheduler.state_dict()
 
-    if __OPTIMIZERS__.get(optimizer_name) is not None:
-        return __OPTIMIZERS__[optimizer_name](
-            model.parameters(), **CFG.optimizer_params
-        )
-    else:
-        return optim.__getattribute__(optimizer_name)(
-            model.parameters(), **CFG.optimizer_params
-        )
+        if not os.path.exists(os.path.dirname(checkpoint_path)):
+            os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        torch.save(state_dict, checkpoint_path)
+        self.last_checkpoint = checkpoint_path
 
+    def load_checkpoint(self, checkpoint_path, load_only_params=False):
+        """Load checkpoint.
 
-def get_scheduler(optimizer):
-    scheduler_name = CFG.scheduler_name
+        Args:
+            checkpoint_path (str): Checkpoint path to be loaded.
+            load_only_params (bool): Whether to load only model parameters.
 
-    if scheduler_name is None:
-        return
-    else:
-        return optim.lr_scheduler.__getattribute__(scheduler_name)(
-            optimizer, **CFG.scheduler_params
-        )
-
-
-# %%
-class SchedulerCallback(Callback):
-    def __init__(self):
-        super().__init__(CallbackOrder.Scheduler)
-
-    def on_loader_end(self, state: IRunner):
-        lr = state.scheduler.get_last_lr()
-        state.epoch_metrics["lr"] = lr[0]
-        if state.is_train_loader:
-            state.scheduler.step()
-
-
-class SampleF1Callback(Callback):
-    def __init__(
-        self,
-        input_key: str = "targets",
-        output_key: str = "logits",
-        prefix: str = "f1",
-        threshold=0.5,
-    ):
-        super().__init__(CallbackOrder.Metric)
-
-        self.input_key = input_key
-        self.output_key = output_key
-        self.prefix = prefix
-        self.threshold = threshold
-
-    def on_loader_start(self, state: IRunner):
-        self.prediction: List[np.ndarray] = []
-        self.target: List[np.ndarray] = []
-
-    def on_batch_end(self, state: IRunner):
-        targ = state.input[self.input_key].detach().cpu().numpy()
-        out = state.output[self.output_key]
-
-        clipwise_output = out["clipwise_output"].detach().cpu().numpy()
-
-        self.prediction.append(clipwise_output)
-        self.target.append(targ)
-
-        y_pred = clipwise_output > self.threshold
-        score = metrics.f1_score(targ, y_pred, average="samples")
-
-        state.batch_metrics[self.prefix] = score
-
-    def on_loader_end(self, state: IRunner):
-        y_pred = np.concatenate(self.prediction, axis=0) > self.threshold
-        y_true = np.concatenate(self.target, axis=0)
-        score = metrics.f1_score(y_true, y_pred, average="samples")
-
-        state.loader_metrics[self.prefix] = score
-        if state.is_valid_loader:
-            state.epoch_metrics[state.valid_loader + "_epoch_" + self.prefix] = score
+        """
+        state_dict = torch.load(checkpoint_path, map_location="cpu")
+        if self.config["distributed"]:
+            self.model.module.load_state_dict(state_dict["model"])
         else:
-            state.epoch_metrics["train_epoch_" + self.prefix] = score
+            self.model.load_state_dict(state_dict["model"])
+        if not load_only_params:
+            self.steps = state_dict["steps"]
+            self.epochs = state_dict["epochs"]
+            self.best_score = state_dict.get("best_score", 0)
+            logger.info(
+                f"Steps:{self.steps}, Epochs:{self.epochs}, BEST score:{self.best_score}"
+            )
+            if (self.optimizer is not None) and (
+                state_dict.get("optimizer", None) is not None
+            ):
+                self.optimizer.load_state_dict(state_dict["optimizer"])
+            if (self.scheduler is not None) and (
+                state_dict.get("scheduler", None) is not None
+            ):
+                self.scheduler.load_state_dict(state_dict["scheduler"])
 
+    def _train_step(self, batch):
+        """Train model one step."""
+        x = batch["X"].to(self.device)  # (B, mel, T')
+        # y_frame = batch["segmentwise_output"].to(self.device)
+        y_clip = batch["clipwise_output"].to(self.device)
+        # logger.debug(f"y_frame,{y_frame.shape}:{y_frame[0]}")
+        logger.debug(f"y_clip,{y_clip.shape}:{y_clip[0]}")
+        y_ = self.model(x)  # {y_frame: (B, T', n_class), y_clip: (B, n_class)}
+        # logger.debug(f"y_frame_:{y_['segmentwise_output'][0]}")
+        logger.debug(f"y_clip_:{y_['clipwise_output'][0]}")
+        if self.config["loss_type"] in [
+            "BCEWithLogitsLoss",
+            "BCEFocal2WayLoss",
+            "BCEFocalLoss",
+        ]:
+            loss = self.criterion(y_["clipwise_output"], y_clip)
+        if not torch.isnan(loss):
+            loss = loss / self.config["accum_grads"]
+            loss.backward()
+            self.forward_count += 1
+            self.total_train_loss["train/loss"] += loss.item()
+            self.total_train_loss["train/f1"] += metrics.f1_score(
+                y_clip, y_["clipwise_output"], average=None
+            )
+            if self.forward_count == self.config["accum_grads"]:
+                # update parameters
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+                self.forward_count = 0
 
-class mAPCallback(Callback):
-    def __init__(
-        self,
-        input_key: str = "targets",
-        output_key: str = "logits",
-        model_output_key: str = "clipwise_output",
-        prefix: str = "mAP",
-    ):
-        super().__init__(CallbackOrder.Metric)
-        self.input_key = input_key
-        self.output_key = output_key
-        self.model_output_key = model_output_key
-        self.prefix = prefix
+                # update scheduler step
+                if self.scheduler is not None:
+                    self.scheduler.step()
 
-    def on_loader_start(self, state: IRunner):
-        self.prediction: List[np.ndarray] = []
-        self.target: List[np.ndarray] = []
+                # update counts
+                self.steps += 1
+                self.tqdm.update(1)
+                self._check_train_finish()
+        else:
+            logger.warn("Loss contain NaN. Don't back-propagated.")
 
-    def on_batch_end(self, state: IRunner):
-        targ = state.input[self.input_key].detach().cpu().numpy()
-        out = state.output[self.output_key]
+        # self.train_pred_frame_epoch = torch.cat(
+        #     [self.train_pred_frame_epoch, y_["segmentwise_output"]], dim=0,
+        # )
+        # self.train_y_frame_epoch = torch.cat([self.train_y_frame_epoch, y_frame], dim=0)
+        self.train_pred_epoch = np.concatenate(
+            [self.train_pred_epoch, y_["clipwise_output"].detach().cpu().numpy()],
+            axis=0,
+        )
+        self.train_y_epoch = np.concatenate(
+            [self.train_y_epoch, y_clip.detach().cpu().numpy()], axis=0,
+        )
 
-        clipwise_output = out[self.model_output_key].detach().cpu().numpy()
+    def _train_epoch(self):
+        """Train model one epoch."""
+        self.model.train()
+        for train_steps_per_epoch, batch in enumerate(self.data_loader["train"], 1):
+            # train one step
+            self._train_step(batch)
 
-        self.prediction.append(clipwise_output)
-        self.target.append(targ)
+            # check interval
+            self._check_save_interval()
 
+            # check whether training is finished
+            if self.finish_train:
+                return
         try:
-            score = metrics.average_precision_score(targ, clipwise_output, average=None)
+            logger.debug(
+                # f"Epoch train pred frame:{self.train_pred_frame_epoch.shape}{self.train_pred_frame_epoch.sum():.4f}\n"
+                # f"Epoch train    y frame:{self.train_y_frame_epoch.shape}{self.train_y_frame_epoch.sum()}\n"
+                f"Epoch train  pred clip:{self.train_pred_epoch.shape}{self.train_pred_epoch.sum():.4f}\n"
+                f"Epoch train     y clip:{self.train_y_epoch.shape}{self.train_y_epoch.sum()}\n"
+            )
+            if self.config["loss_type"] in [
+                "BCEWithLogitsLoss",
+                "BCEFocal2WayLoss",
+                "BCEFocalLoss",
+            ]:
+                self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
+                    torch.tensor(self.train_pred_epoch).to(self.device),
+                    torch.tensor(self.train_y_epoch).to(self.device),
+                ).item()
+            self.epoch_train_loss["train/epoch_loss"] = self.epoch_train_loss[
+                "train/epoch_main_loss"
+            ]
+
+            self.epoch_train_loss["train/epoch_f1_03_clip"] = metrics.f1_score(
+                self.train_y_epoch, self.train_pred_epoch > 0.3, average="samples"
+            )
+            self.epoch_train_loss["train/epoch_f1_05_clip"] = metrics.f1_score(
+                self.train_y_epoch, self.train_pred_epoch > 0.5, average="samples"
+            )
+            self.epoch_train_loss["train/epoch_f1_07_clip"] = metrics.f1_score(
+                self.train_y_epoch, self.train_pred_epoch > 0.7, average="samples"
+            )
+            # self.epoch_train_loss["train/epoch_f1_frame"] = metrics.f1_score(
+            #     self.train_y_epoch,
+            #     self.train_pred_frame_epoch.detach().cpu().numpy().max(axis=1),
+            #     average="samples",
+            # )
+            # self.epoch_train_loss["train/epoch_f1"] = (
+            #     self.epoch_train_loss["train/epoch_f1_clip"]
+            #     + self.epoch_train_loss["train/epoch_f1_frame"]
+            # ) / 2.0
+            self.epoch_train_loss["train/lr"] = self.optimizer.param_groups[0]["lr"]
         except ValueError:
-            import pdb
+            logger.warning("Raise ValueError: May be contain NaN in y_pred.")
+            pass
+        # log
+        logger.info(
+            f"(Steps: {self.steps}) Finished {self.epochs} epoch training "
+            f"({train_steps_per_epoch} steps per epoch)."
+        )
+        for key in self.epoch_train_loss.keys():
+            logger.info(
+                f"(Epoch: {self.epochs}) {key} = {self.epoch_train_loss[key]:.6f}."
+            )
+        self._write_to_tensorboard(self.epoch_train_loss)
+        # update
+        self.train_steps_per_epoch = train_steps_per_epoch
+        self.epochs += 1
+        # needed for shuffle in distributed training
+        if self.config["distributed"]:
+            self.train_sampler.set_epoch(self.epochs)
+        # reset
+        # self.train_pred_frame_epoch = torch.empty(
+        #     (0, self.config["l_target"], self.config["n_class"])
+        # ).to(self.device)
+        # self.train_y_frame_epoch = torch.empty(
+        #     (0, self.config["l_target"], self.config["n_class"])
+        # ).to(self.device)
+        self.train_y_epoch = np.empty((0, self.n_target))
+        self.train_pred_epoch = np.empty((0, self.n_target))
+        self.epoch_train_loss = defaultdict(float)
 
-            pdb.set_trace()
-        score = np.nan_to_num(score).mean()
-        state.batch_metrics[self.prefix] = score
+    @torch.no_grad()
+    def _valid_step(self, batch):
+        """Evaluate model one step."""
+        x = batch["X"].to(self.device)
+        # y_frame = batch["segmentwise_output"].to(self.device)
+        y_clip = batch["clipwise_output"].to(self.device)
+        y_ = self.model(x)
+        # if self.config["loss_type"] in [
+        #     "BCEWithLogitsLoss",
+        #     "BCEFocal2WayLoss",
+        #     "BCEFocalLoss",
+        # ]:
+        #     loss = self.criterion(y_["clipwise_output"], y_clip)
+        # add to total valid loss
+        # self.valid_pred_frame_epoch = torch.cat(
+        #     [self.valid_pred_frame_epoch, y_["segmentwise_output"],], dim=0,
+        # )
+        # self.valid_y_frame_epoch = torch.cat([self.valid_y_frame_epoch, y_frame], dim=0)
+        self.valid_pred_epoch = np.concatenate(
+            [
+                self.valid_pred_epoch,
+                y_["clipwise_output"].detach().cpu().numpy().astype(np.float32),
+            ],
+            axis=0,
+        )
+        self.valid_y_epoch = np.concatenate(
+            [self.valid_y_epoch, y_clip.detach().cpu().numpy().astype(np.float32)],
+            axis=0,
+        )
 
-    def on_loader_end(self, state: IRunner):
-        y_pred = np.concatenate(self.prediction, axis=0)
-        y_true = np.concatenate(self.target, axis=0)
-        score = metrics.average_precision_score(y_true, y_pred, average=None)
-        score = np.nan_to_num(score).mean()
-        state.loader_metrics[self.prefix] = score
-        if state.is_valid_loader:
-            state.epoch_metrics[state.valid_loader + "_epoch_" + self.prefix] = score
-        else:
-            state.epoch_metrics["train_epoch_" + self.prefix] = score
+    def _valid_epoch(self):
+        """Evaluate model one epoch."""
+        logger.info(f"(Steps: {self.steps}) Start dev data's validation.")
+        # change mode
+        self.model.training = False
+        self.model.eval()
 
+        # calculate loss for each batch
+        for valid_steps_per_epoch, batch in enumerate(
+            tqdm(self.data_loader["valid"], desc="[valid]"), 1
+        ):
+            # valid one step
+            self._valid_step(batch)
+        try:
+            logger.debug(
+                # f"Epoch valid pred_frame:{self.valid_pred_frame_epoch.sum():.4f}\n"
+                # f"Epoch valid    y_frame:{self.valid_y_frame_epoch.sum():.4f}\n"
+                f"Epoch valid pred_clip:{self.valid_pred_epoch.sum()}\n"
+                f"Epoch valid    y_clip:{self.valid_y_epoch.sum()}\n"
+            )
+            if self.config["loss_type"] in [
+                "BCEWithLogitsLoss",
+                "BCEFocal2WayLoss",
+                "BCEFocalLoss",
+            ]:
+                self.epoch_valid_loss["valid/epoch_main_loss"] = self.criterion(
+                    torch.tensor(self.valid_pred_epoch).to(self.device),
+                    torch.tensor(self.valid_y_epoch).to(self.device),
+                ).item()
+            self.epoch_valid_loss["valid/epoch_loss"] = self.epoch_valid_loss[
+                "valid/epoch_main_loss"
+            ]
+            self.epoch_valid_loss["valid/epoch_f1_03_clip"] = metrics.f1_score(
+                self.valid_y_epoch, self.valid_pred_epoch > 0.3, average="samples"
+            )
+            self.epoch_valid_loss["valid/epoch_f1_05_clip"] = metrics.f1_score(
+                self.valid_y_epoch, self.valid_pred_epoch > 0.5, average="samples"
+            )
+            self.epoch_valid_loss["valid/epoch_f1_07_clip"] = metrics.f1_score(
+                self.valid_y_epoch, self.valid_pred_epoch > 0.7, average="samples"
+            )
+            # self.epoch_valid_loss["valid/epoch_f1_frame"] = metrics.f1_score(
+            #     self.valid_y_epoch,
+            #     self.valid_pred_frame_epoch.detach().cpu().numpy().max(axis=1),
+            #     average="samples"
+            # )
+            # self.epoch_valid_loss["valid/epoch_f1"] = (
+            #     self.epoch_valid_loss["valid/epoch_f1_clip"]
+            #     + self.epoch_valid_loss["valid/epoch_f1_frame"]
+            # ) / 2.0
+        except ValueError:
+            logger.warning("Raise ValueError: May be contain NaN in y_pred.")
+            pass
+        # log
+        logger.info(
+            f"(Steps: {self.steps}) Finished valid data's validation "
+            f"({valid_steps_per_epoch} steps per epoch)."
+        )
+        for key in self.epoch_valid_loss.keys():
+            logger.info(
+                f"(Epoch: {self.epochs}) {key} = {self.epoch_valid_loss[key]:.6f}."
+            )
+        if self.epoch_valid_loss["valid/epoch_f1_clip"] > self.best_score:
+            self.best_score = self.epoch_valid_loss["valid/epoch_f1_clip"]
+            logger.info(
+                f"Epochs: {self.epochs}, BEST score was updated {self.best_score:.6f}."
+            )
+            save_path = os.path.join(
+                self.config["outdir"], "best_score", f"best_score{self.save_name}.pkl",
+            )
+            self.save_checkpoint(save_path, save_model_only=False)
+            logger.info(
+                f"Best model was updated @ {self.steps} steps." f"Saved at {save_path}"
+            )
 
-def get_callbacks():
-    return [
-        SampleF1Callback(prefix="f1_at_05", threshold=0.5),
-        SampleF1Callback(prefix="f1_at_03", threshold=0.3),
-        SampleF1Callback(prefix="f1_at_07", threshold=0.7),
-        mAPCallback(),
-    ]
+        logger.info(f"(Steps: {self.steps}) Start valid data's validation.")
+        # if self.epochs % self.config["valid_interval_epochs"] == 0:
+        #     items = self.inference(mode="valid")
+        #     logger.info(f"Inference (Epochs: {self.epochs}) f1: {items['score']:.6f}")
+        #     self._write_to_tensorboard(self.valid_metric)
+        #     self.valid_metric = defaultdict(float)
+        # record
+        self._write_to_tensorboard(self.epoch_valid_loss)
 
+        # reset
+        self.epoch_valid_loss = defaultdict(float)
+        # self.valid_pred_frame_epoch = torch.empty(
+        #     (0, self.config["l_target"], self.config["n_class"])
+        # ).to(self.device)
+        # self.valid_y_frame_epoch = torch.empty(
+        #     (0, self.config["l_target"], self.config["n_class"])
+        # ).to(self.device)
+        self.valid_pred_epoch = np.empty((0, self.n_target))
+        self.valid_y_epoch = np.empty((0, self.n_target))
+        # restore mode
+        self.model.training = True
+        self.model.train()
 
-def get_runner(device):
-    return SupervisedRunner(
-        input_key="image", input_target_key="targets", device=device
-    )
+    def _write_to_tensorboard(self, loss):
+        """Write to tensorboard."""
+        if self.train:
+            for key, value in loss.items():
+                self.writer.add_scalar(key, value, self.steps)
+
+    def _check_save_interval(self):
+        if (self.steps % self.config["save_interval_steps"] == 0) and (self.steps != 0):
+            self.save_checkpoint(
+                os.path.join(
+                    self.config["outdir"],
+                    f"checkpoint-{self.steps}",
+                    f"checkpoint-{self.steps}{self.save_name}.pkl",
+                ),
+                save_model_only=False,
+            )
+            logger.info(f"Successfully saved checkpoint @ {self.steps} steps.")
+
+    def _check_log_interval(self):
+        if self.steps % self.config["log_interval_steps"] == 0:
+            for key in self.total_train_loss.keys():
+                self.total_train_loss[key] /= self.config["log_interval_steps"]
+                logger.info(
+                    f"(Steps: {self.steps}) {key} = {self.total_train_loss[key]:.4f}."
+                )
+            self._write_to_tensorboard(self.total_train_loss)
+
+            # reset
+            self.total_train_loss = defaultdict(float)
+
+    def _check_train_finish(self):
+        if self.steps >= self.config["train_max_steps"]:
+            self.finish_train = True
 
 
 # Training!
 
-# %%
-warnings.filterwarnings("ignore")
-
-logdir = Path(args.outdir)
-logdir.mkdir(exist_ok=True, parents=True)
-if (logdir / "train.log").exists():
-    os.remove(logdir / "train.log")
-logger = init_logger(log_file=logdir / "train.log")
-
-
-# %%
-# environment
-set_seed(CFG.seed)
-device = get_device()
-logger.info(f"{type(device)}, {device}")
 # validation
-splitter = getattr(model_selection, CFG.split)(**CFG.split_params)
+splitter = getattr(model_selection, config["split"])(**config["split_params"])
 
 # data
-train = pd.read_csv(CFG.train_csv)
-
-
-# %%
+train = pd.read_csv(config["train_csv"])
 # main loop
 for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_label"])):
-    if i not in CFG.folds:
+    if i not in config["folds"]:
         continue
     logger.info("=" * 120)
     logger.info(f"Fold {i} Training")
@@ -773,49 +720,102 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_la
 
     trn_df = train.loc[trn_idx, :].reset_index(drop=True)
     val_df = train.loc[val_idx, :].reset_index(drop=True)
+    data_loader = {}
+    for phase, df_ in zip(["valid", "train"], [val_df, trn_df]):
+        dataset = WaveformDataset(
+            df_,
+            config["train_datadir"],
+            img_size=config["img_size"],
+            waveform_transforms=get_transforms(phase),
+            period=config["period"],
+            validation=(phase == "valid"),
+        )
+        sampler = None
+        if args.distributed:
+            logger.info("Use multi gpu.")
+            # setup sampler for distributed training
+            from torch.utils.data.distributed import DistributedSampler
 
-    loaders = {
-        phase: torchdata.DataLoader(
-            WaveformDataset(
-                df_,
-                CFG.train_datadir,
-                img_size=CFG.img_size,
-                waveform_transforms=get_transforms(phase),
-                period=CFG.period,
-                validation=(phase == "valid"),
-            ),
-            **CFG.loader_params[phase],
-        )  # type: ignore
-        for phase, df_ in zip(["train", "valid"], [trn_df, val_df])
-    }
-
+            sampler = DistributedSampler(
+                dataset=dataset,
+                num_replicas=args.world_size,
+                rank=args.rank,
+                shuffle=(phase == "train"),
+            )
+        data_loader[phase] = torchdata.DataLoader(
+            dataset, sampler=sampler, **config["loader_params"][phase],
+        )
     model = TimmSED(
-        base_model_name=CFG.base_model_name,
-        pretrained=CFG.pretrained,
-        num_classes=CFG.num_classes,
-        in_channels=CFG.in_channels,
+        base_model_name=config["base_model_name"],
+        pretrained=config["pretrained"],
+        num_classes=config["num_classes"],
+        in_channels=config["in_channels"],
     )
+    if args.distributed:
+        try:
+            from apex.parallel import DistributedDataParallel
+        except ImportError:
+            raise ImportError(
+                "Apex is not installed. Please check https://github.com/NVIDIA/apex."
+            )
+        # NOTE(ibkuroyagi): Needed to place the model on GPU
+        model = DistributedDataParallel(model.to(device))
     if i == 0:
         logger.info(model)
-    criterion = get_criterion()
-    optimizer = get_optimizer(model)
-    scheduler = get_scheduler(optimizer)
-    callbacks = get_callbacks()
-    runner = get_runner(device)
-    logger.info(runner)
-    runner.train(
-        model=model,
+    loss_class = getattr(
+        losses,
+        # keep compatibility
+        config.get("loss_type", "BCEWithLogitsLoss"),
+    )
+    if config["loss_params"].get("pos_weight", None) is not None:
+        pos_weight = config["loss_params"]["pos_weight"]
+        config["loss_params"]["pos_weight"] = torch.tensor(
+            pos_weight, dtype=torch.float
+        ).to(device)
+    criterion = loss_class(**config["loss_params"]).to(device)
+    optimizer_class = getattr(
+        optimizers,
+        # keep compatibility
+        config.get("optimizer_type", "Adam"),
+    )
+    optimizer = optimizer_class(model.parameters(), **config["optimizer_params"])
+    scheduler = None
+    if config.get("scheduler_type", None) is not None:
+        scheduler_class = getattr(
+            torch.optim.lr_scheduler,
+            # keep compatibility
+            config.get("scheduler_type", "StepLR"),
+        )
+        scheduler = scheduler_class(optimizer=optimizer, **config["scheduler_params"])
+    trainer = SEDTrainer(
+        steps=0,
+        epochs=0,
+        data_loader=data_loader,
+        train_sampler=sampler,
+        model=model.to(device),
         criterion=criterion,
-        loaders=loaders,
         optimizer=optimizer,
         scheduler=scheduler,
-        num_epochs=CFG.epochs,
-        verbose=True,
-        logdir=logdir / f"fold{i}",
-        callbacks=callbacks,
-        main_metric=CFG.main_metric,
-        minimize_metric=CFG.minimize_metric,
+        config=config,
+        device=device,
+        train=i == 0,
+        save_name=f"fold{i}",
     )
+    # resume from checkpoint
+    if len(args.resume) != 0:
+        if args.resume[i] != "no_model":
+            trainer.load_checkpoint(args.resume[i], load_only_params=False)
+            logger.info(f"Successfully resumed from {args.resume[i]}.")
+    # run training loop
+    try:
+        trainer.run()
+    except KeyboardInterrupt:
+        trainer.save_checkpoint(
+            os.path.join(
+                config["outdir"], f"checkpoint-{trainer.steps}stepsfold{i}.pkl"
+            )
+        )
+        logger.info(f"Successfully saved checkpoint @ {trainer.steps}steps.")
     logger.info(f"Finish runner {i} fold.")
 
     del model, optimizer, scheduler

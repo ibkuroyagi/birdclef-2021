@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2020 Ibuki Kuroyanagi
-#  MIT License (https://opensource.org/licenses/MIT)
+# Copyright 2021 Ibuki Kuroyanagi
 
 """Utility functions."""
 
 import fnmatch
+import random
 import logging
 import os
 import sys
@@ -301,32 +301,26 @@ def get_concat_down_frame(y_frame, l_original=5626, max_frames=512):
     return down_concat_frame
 
 
-def original_mixup(batch: torch.tensor, mixup_alpha=0.2, device="cpu"):
-    """Original mixup function
-
-    Args:
-        batch (torch.tensor): batch {X:(B*2, ...), y_frame:(B*2, ...), y_clip:(B*2, ...)}
-        mixup_alpha (float, optional): Parameter of beta distribution. Defaults to 0.2.
-        device (str, optional): Cuda device. Defaults to "cup".
-    Returns:
-        batch (torch.tensor): batch {X:(B, ...), y_frame:(B, ...), y_clip:(B, ...)}
-    """
-    for i, (key, value) in enumerate(batch.items()):
-        if i == 0:
-            batch_size = value.shape[0] // 2
-            lambda_arr = torch.tensor(
-                np.random.beta(mixup_alpha, mixup_alpha, batch_size).astype(np.float32)
-            ).to(device)
-        batch[key] = (
-            value[:batch_size].transpose(0, -1) * lambda_arr
-            + value[batch_size : batch_size * 2].transpose(0, -1) * (1 - lambda_arr)
-        ).transpose(0, -1)
-    return batch
+def set_seed(seed=42):
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
-if __name__ == "__main__":
-    y_true = np.array([[1, 0, 0], [0, 0, 1]])
-    y_score = np.array([[0.75, 0.5, 1], [1, 0.2, 0.1]])
+def init_logger(log_file="train.log"):
+    from logger import getLogger, INFO, FileHandler, Formatter, StreamHandler
 
-    score = lwlrap(y_true, y_score)
-    print(f"score:{score:.4f}")
+    logger = getLogger(__name__)
+    logger.setLevel(INFO)
+    handler1 = StreamHandler()
+    handler1.setFormatter(Formatter("%(message)s"))
+    handler2 = FileHandler(filename=log_file)
+    handler2.setFormatter(Formatter("%(message)s"))
+    logger.addHandler(handler1)
+    logger.addHandler(handler2)
+    return logger

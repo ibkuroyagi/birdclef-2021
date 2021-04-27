@@ -110,7 +110,9 @@ EOF
 - 
 
 ## 決定事項
-- 
+- trainにもvalidationにも、short_audioとsoundscapeの両方を用いる
+    - ただし、soundscapeは各5秒数ごとに切る前提を置く。そしてバリデーションをする場合長い系列のfoldに合わせる。
+    - nocallは排除して考える
 ## 実験結果からの気づき
 - 
 ### 実験したモデルたち

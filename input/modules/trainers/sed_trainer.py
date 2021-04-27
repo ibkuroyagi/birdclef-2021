@@ -76,8 +76,7 @@ class SEDTrainer(object):
         if use_center_loss:
             self.center_loss = CenterLoss(device=device, **config["center_loss_params"])
             optimizer_class = getattr(
-                optimizers,
-                config.get("center_optimizer_type", "Adam"),
+                optimizers, config.get("center_optimizer_type", "Adam"),
             )
             self.optimizer_centloss = optimizer_class(
                 [
@@ -98,8 +97,7 @@ class SEDTrainer(object):
             self.tsne = TSNE(**config["tsne_params"])
         if use_dializer:
             loss_class = getattr(
-                losses,
-                config.get("dializer_loss_type", "BCEWithLogitsLoss"),
+                losses, config.get("dializer_loss_type", "BCEWithLogitsLoss"),
             )
             self.dializer_loss = loss_class(**config["dializer_loss_params"])
             self.train_pred_frame_mask_epoch = torch.empty(
@@ -342,12 +340,10 @@ class SEDTrainer(object):
             #     f"{self.train_pred_frame_mask_epoch.shape}, {y_['frame_mask'].shape}"
             # )
             self.train_pred_frame_mask_epoch = torch.cat(
-                [self.train_pred_frame_mask_epoch, y_["frame_mask"]],
-                dim=0,
+                [self.train_pred_frame_mask_epoch, y_["frame_mask"]], dim=0,
             )
             self.train_y_frame_mask_epoch = torch.cat(
-                [self.train_y_frame_mask_epoch, frame_mask],
-                dim=0,
+                [self.train_y_frame_mask_epoch, frame_mask], dim=0,
             )
 
     def _train_epoch(self):
@@ -572,12 +568,10 @@ class SEDTrainer(object):
             )
         if self.use_dializer:
             self.dev_pred_frame_mask_epoch = torch.cat(
-                [self.dev_pred_frame_mask_epoch, y_["frame_mask"]],
-                dim=0,
+                [self.dev_pred_frame_mask_epoch, y_["frame_mask"]], dim=0,
             )
             self.dev_y_frame_mask_epoch = torch.cat(
-                [self.dev_y_frame_mask_epoch, frame_mask],
-                dim=0,
+                [self.dev_y_frame_mask_epoch, frame_mask], dim=0,
             )
 
     def _eval_epoch(self):
@@ -676,9 +670,7 @@ class SEDTrainer(object):
                 f"Epochs: {self.epochs}, BEST score was updated {self.best_score:.6f}."
             )
             save_path = os.path.join(
-                self.config["outdir"],
-                "best_score",
-                f"best_score{self.save_name}.pkl",
+                self.config["outdir"], "best_score", f"best_score{self.save_name}.pkl",
             )
             self.save_checkpoint(save_path, save_model_only=False)
             logging.info(

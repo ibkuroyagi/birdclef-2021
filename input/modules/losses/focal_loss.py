@@ -2,23 +2,40 @@ import torch
 import torch.nn as nn
 
 
-class FocalLoss(nn.Module):
-    def __init__(self, reduction="mean", alpha=1.0, gamma=1.5):
-        super(self.__class__, self).__init__()
-        self.loss_fct = nn.BCEWithLogitsLoss(reduction="none")
+# https://www.kaggle.com/c/rfcx-species-audio-detection/discussion/213075
+class BCEFocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2.0):
+        super().__init__()
         self.alpha = alpha
         self.gamma = gamma
-        self.reduction = reduction
 
     def forward(self, preds, targets):
-        bce_loss = self.loss_fct(preds, targets)
+        bce_loss = nn.BCEWithLogitsLoss(reduction="none")(preds, targets)
         probas = torch.sigmoid(preds)
-        loss = torch.where(
-            targets >= 0.5,
-            self.alpha * (1.0 - probas) ** self.gamma * bce_loss,
-            probas ** self.gamma * bce_loss,
+        loss = (
+            targets * self.alpha * (1.0 - probas) ** self.gamma * bce_loss
+            + (1.0 - targets) * probas ** self.gamma * bce_loss
         )
-        if self.reduction == "mean":
-            return loss.mean()
-        elif self.reduction == "sum":
-            return loss.sum()
+        loss = loss.mean()
+        return loss
+
+
+class BCEFocal2WayLoss(nn.Module):
+    def __init__(self, weights=[1, 1], class_weights=None):
+        super().__init__()
+
+        self.focal = BCEFocalLoss()
+
+        self.weights = weights
+
+    def forward(self, input, target):
+        input_ = input["logit"]
+        target = target.float()
+
+        framewise_output = input["framewise_logit"]
+        clipwise_output_with_max, _ = framewise_output.max(dim=1)
+
+        loss = self.focal(input_, target)
+        aux_loss = self.focal(clipwise_output_with_max, target)
+
+        return self.weights[0] * loss + self.weights[1] * aux_loss
