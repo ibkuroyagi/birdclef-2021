@@ -6,14 +6,14 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # path related
 export PRJ_ROOT="${PWD}/.."
-if [ -e "${PRJ_ROOT}/tools/centos_venv/bin/activate" ]; then
-    # shellcheck disable=SC1090
-    . "${PRJ_ROOT}/tools/centos_venv/bin/activate"
-fi
-# if [ -e "${PRJ_ROOT}/tools/activate_python.sh" ]; then
+# if [ -e "${PRJ_ROOT}/tools/centos_venv/bin/activate" ]; then
 #     # shellcheck disable=SC1090
-#     . "${PRJ_ROOT}/tools/activate_python.sh"
+#     . "${PRJ_ROOT}/tools/centos_venv/bin/activate"
 # fi
+if [ -e "${PRJ_ROOT}/tools/activate_python.sh" ]; then
+    # shellcheck disable=SC1090
+    . "${PRJ_ROOT}/tools/activate_python.sh"
+fi
 export PATH="${PATH}:${PRJ_ROOT}/utils"
 # python related
 export OMP_NUM_THREADS=1

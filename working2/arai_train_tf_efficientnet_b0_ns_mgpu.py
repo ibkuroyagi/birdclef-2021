@@ -20,12 +20,11 @@ sys.path.append("../input/modules")
 import losses  # noqa: E402
 import optimizers  # noqa: E402
 from models import TimmSED  # noqa: E402
-from utils import init_logger  # noqa: E402
 from utils import target_columns  # noqa: E402
 from utils import set_seed  # noqa: E402
 
 ALL_DATA = 871 + 62874
-BATCH_SIZE = 12
+BATCH_SIZE = 16  # 40
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -91,7 +90,6 @@ else:
         format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
     )
     logging.warning("Skip DEBUG/INFO messages")
-
 config = {
     ######################
     # Globals #
@@ -140,7 +138,7 @@ config = {
     ######################
     # Model #
     ######################
-    "base_model_name": "tf_efficientnet_b7_ns",
+    "base_model_name": "tf_efficientnet_b0_ns",
     "pooling": "max",
     "pretrained": True,
     "n_target": 397,
@@ -178,10 +176,7 @@ config["train_max_steps"] = config["epochs"] * config["save_interval_steps"]
 
 
 for key, value in config.items():
-    if args.n_gpus > 1:
-        print(f"{key} = {value}")
-    else:
-        logging.info(f"{key} = {value}")
+    logging.info(f"{key} = {value}")
 set_seed(config["seed"])
 # check distributed training
 if args.distributed:
@@ -546,9 +541,9 @@ class SEDTrainer(object):
                 average="samples",
                 zero_division=0,
             )
-            self.epoch_train_loss["train/epoch_f1_01_clip"] = metrics.f1_score(
+            self.epoch_train_loss["train/epoch_f1_07_clip"] = metrics.f1_score(
                 self.train_y_epoch,
-                self.train_pred_epoch > 0.1,
+                self.train_pred_epoch > 0.7,
                 average="samples",
                 zero_division=0,
             )
@@ -663,9 +658,9 @@ class SEDTrainer(object):
                 average="samples",
                 zero_division=0,
             )
-            self.epoch_valid_loss["valid/epoch_f1_01_clip"] = metrics.f1_score(
+            self.epoch_valid_loss["valid/epoch_f1_07_clip"] = metrics.f1_score(
                 self.valid_y_epoch,
-                self.valid_pred_epoch > 0.1,
+                self.valid_pred_epoch > 0.7,
                 average="samples",
                 zero_division=0,
             )
@@ -681,8 +676,8 @@ class SEDTrainer(object):
             logging.info(
                 f"(Epoch: {self.epochs}) {key} = {self.epoch_valid_loss[key]:.6f}."
             )
-        if self.epoch_valid_loss["valid/epoch_f1_03_clip"] > self.best_score:
-            self.best_score = self.epoch_valid_loss["valid/epoch_f1_03_clip"]
+        if self.epoch_valid_loss["valid/epoch_f1_clip"] > self.best_score:
+            self.best_score = self.epoch_valid_loss["valid/epoch_f1_clip"]
             logging.info(
                 f"Epochs: {self.epochs}, BEST score was updated {self.best_score:.6f}."
             )

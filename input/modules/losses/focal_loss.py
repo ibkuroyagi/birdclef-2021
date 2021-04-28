@@ -28,14 +28,11 @@ class BCEFocal2WayLoss(nn.Module):
 
         self.weights = weights
 
-    def forward(self, input, target):
-        input_ = input["logit"]
+    def forward(self, logit, frame_logit, target):
         target = target.float()
+        clipwise_output_with_max, _ = frame_logit.max(dim=1)
 
-        framewise_output = input["framewise_logit"]
-        clipwise_output_with_max, _ = framewise_output.max(dim=1)
-
-        loss = self.focal(input_, target)
+        loss = self.focal(logit, target)
         aux_loss = self.focal(clipwise_output_with_max, target)
 
         return self.weights[0] * loss + self.weights[1] * aux_loss

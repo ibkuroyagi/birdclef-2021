@@ -22,7 +22,7 @@ dependencies:
   - brotlipy=0.7.0=py39h27cfd23_1003
   - bzip2=1.0.8=h7f98852_4
   - c-ares=1.17.1=h27cfd23_0
-  - ca-certificates=2020.10.14=0
+  - ca-certificates=2020.12.5=ha878542_0
   - cachetools=4.2.1=pyhd3eb1b0_0
   - certifi=2020.12.5=py39hf3d152e_1
   - cffi=1.14.5=py39h261ae71_0
@@ -213,6 +213,10 @@ dependencies:
   - zlib=1.2.11=h7b6447c_3
   - zstd=1.4.9=ha95c52a_0
   - pip:
+    - apex==0.1
+    - catalyst==20.12
     - colorednoise==1.1.1
+    - tensorboardx==2.2
+    - timm==0.4.8
     - torchlibrosa==0.0.9
-prefix: ~/workspace2/kaggle/BridCLEF/tools/venv/envs/conda_env
+prefix: /home/i_kuroyanagi/workspace2/kaggle/BridCLEF/tools/venv/envs/conda_env

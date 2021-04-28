@@ -250,23 +250,23 @@ class TimmSED(nn.Module):
         x = F.dropout(x, p=0.5, training=self.training)
         (clipwise_output, norm_att, segmentwise_output) = self.att_block(x)
         logit = torch.sum(norm_att * self.att_block.cla(x), dim=2)
-        # segmentwise_logit = self.att_block.cla(x).transpose(1, 2)
+        segmentwise_logit = self.att_block.cla(x).transpose(1, 2)
         segmentwise_output = segmentwise_output.transpose(1, 2)
 
-        # interpolate_ratio = frames_num // segmentwise_output.size(1)
+        interpolate_ratio = frames_num // segmentwise_output.size(1)
 
-        # # Get framewise output
-        # framewise_output = interpolate(segmentwise_output, interpolate_ratio)
-        # framewise_output = pad_framewise_output(framewise_output, frames_num)
+        # Get framewise output
+        framewise_output = interpolate(segmentwise_output, interpolate_ratio)
+        framewise_output = pad_framewise_output(framewise_output, frames_num)
 
-        # framewise_logit = interpolate(segmentwise_logit, interpolate_ratio)
-        # framewise_logit = pad_framewise_output(framewise_logit, frames_num)
+        framewise_logit = interpolate(segmentwise_logit, interpolate_ratio)
+        framewise_logit = pad_framewise_output(framewise_logit, frames_num)
 
         output_dict = {
             # "framewise_output": framewise_output,
             "segmentwise_output": segmentwise_output,
             "logit": logit,
-            # "framewise_logit": framewise_logit,
+            "framewise_logit": framewise_logit,
             "clipwise_output": clipwise_output,
         }
 

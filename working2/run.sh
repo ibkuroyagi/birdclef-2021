@@ -15,8 +15,8 @@ log() {
 verbose=1               # verbosity level, higher is more logging
 stage=0                 # stage to start
 stop_stage=100          # stage to stop
-n_gpus=1                # number of gpus for training
-n_jobs=4                # number of parallel jobs in feature extraction
+n_gpus=8                # number of gpus for training
+n_jobs=2                # number of parallel jobs in feature extraction
 type=wave               # preprocess type.
 speed_facters="0.9 1.1" # The facter of data augmentation.
 conf=conf/Cnn14_DecisionLevelAtt.yaml
@@ -35,7 +35,7 @@ train_file="arai_train_tf_efficientnet_b7_ns_mgpu"
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
-tag="${train_file}/base"
+tag="${train_file}/lr3e_4"
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 2: Network training."
     outdir=${expdir}/${tag}
@@ -47,9 +47,12 @@ if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
         train="python ${train_file}.py"
     fi
     # shellcheck disable=SC2086,SC2154
-    ${cuda_cmd} --num_threads "${n_jobs}" --gpu "${n_gpus}" "${outdir}/${train_file}.log" \
+    ${train_cmd} --num_threads "${n_jobs}" --gpu "${n_gpus}" "${outdir}/${train_file}.log" \
         ${train} \
-        --outdir ${outdir}
+        --resume ${resume} \
+        --outdir ${outdir} \
+        --n_gpus ${n_gpus} \
+        --verbose ${verbose}
 
     log "Successfully finished the training."
 fi
