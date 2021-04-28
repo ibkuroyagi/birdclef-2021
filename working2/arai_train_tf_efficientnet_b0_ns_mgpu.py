@@ -13,7 +13,6 @@ from pathlib import Path
 from tqdm import tqdm
 from collections import defaultdict
 from tensorboardX import SummaryWriter
-from sklearn import model_selection
 from sklearn import metrics
 
 sys.path.append("../input/modules")
@@ -23,8 +22,10 @@ from models import TimmSED  # noqa: E402
 from utils import target_columns  # noqa: E402
 from utils import set_seed  # noqa: E402
 
-ALL_DATA = 871 + 62874
-BATCH_SIZE = 16  # 40
+sys.path.append("../input/iterative-stratification-master")
+from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
+
+BATCH_SIZE = 40  # 40
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -103,11 +104,11 @@ config = {
     ######################
     # Interval setting #
     ######################
-    "eval_interval_epochs": 1,
+    "save_interval_epochs": 5,
     ######################
     # Data #
     ######################
-    "train_datadir": Path("../input/birdclef-2021/train_short_audio"),
+    "train_datadir": "../input/birdclef-2021/train_short_audio",
     "train_csv": "../input/birdclef-2021/train_metadata.csv",
     "train_soundscape": "../input/birdclef-2021/train_soundscape_labels.csv",
     ######################
@@ -165,14 +166,30 @@ config.update(vars(args))
 
 # this notebook is by default run on debug mode (only train one epoch).
 # If you'd like to get the results on par with that of inference notebook, you'll need to train the model around 30 epochs
+
+train_meta_df = pd.read_csv(config["train_csv"])
+train_soundscape = pd.read_csv(config["train_soundscape"])
+train_meta_df = train_meta_df.rename(columns={"primary_label": "birds"})
+train_meta_df["path"] = (
+    config["train_datadir"]
+    + "/"
+    + train_meta_df["birds"]
+    + "/"
+    + train_meta_df["filename"]
+)
+
+soundscape = pd.read_csv(f"dump/train_{config['period']}sec.csv")
+soundscape = soundscape[soundscape["birds"] != "nocall"]
+df = pd.concat(
+    [soundscape[["path", "birds"]], train_meta_df[["path", "birds"]]], axis=0
+).reset_index(drop=True)
+ALL_DATA = len(df)
 DEBUG = False
 if DEBUG:
     config["epochs"] = 1
-config["save_interval_steps"] = ALL_DATA // (
-    BATCH_SIZE * config["n_gpus"] * config["accum_grads"]
-)
-config["log_interval_steps"] = config["save_interval_steps"] // 5
-config["train_max_steps"] = config["epochs"] * config["save_interval_steps"]
+steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
+config["log_interval_steps"] = steps_per_epoch // 5
+config["train_max_steps"] = config["epochs"] * steps_per_epoch
 
 
 for key, value in config.items():
@@ -193,15 +210,13 @@ class WaveformDataset(torchdata.Dataset):
     def __init__(
         self,
         df: pd.DataFrame,
-        datadir: Path,
-        img_size=128,
+        label: np.array,
         waveform_transforms=None,
         period=20,
         validation=False,
     ):
         self.df = df
-        self.datadir = datadir
-        self.img_size = img_size
+        self.label = label
         self.waveform_transforms = waveform_transforms
         self.period = period
         self.validation = validation
@@ -210,42 +225,29 @@ class WaveformDataset(torchdata.Dataset):
         return len(self.df)
 
     def __getitem__(self, idx: int):
-        sample = self.df.loc[idx, :]
-        wav_name = sample["filename"]
-        ebird_code = sample["primary_label"]
-
-        y, sr = sf.read(self.datadir / ebird_code / wav_name)
-
-        len_y = len(y)
+        path, bird = self.df.iloc[idx]
+        x, sr = sf.read(path)
+        len_x = len(x)
         effective_length = sr * self.period
-        if len_y < effective_length:
-            new_y = np.zeros(effective_length, dtype=y.dtype)
+        if len_x < effective_length:
+            new_x = np.zeros(effective_length, dtype=x.dtype)
             if not self.validation:
-                start = np.random.randint(effective_length - len_y)
+                start = np.random.randint(effective_length - len_x)
             else:
                 start = 0
-            new_y[start : start + len_y] = y
-            y = new_y.astype(np.float32)
-        elif len_y > effective_length:
+            new_x[start : start + len_x] = x
+            x = new_x.astype(np.float32)
+        elif len_x > effective_length:
             if not self.validation:
-                start = np.random.randint(len_y - effective_length)
+                start = np.random.randint(len_x - effective_length)
             else:
                 start = 0
-            y = y[start : start + effective_length].astype(np.float32)
+            x = x[start : start + effective_length].astype(np.float32)
         else:
-            y = y.astype(np.float32)
-
-        y = np.nan_to_num(y)
-
+            x = x.astype(np.float32)
         if self.waveform_transforms:
-            y = self.waveform_transforms(y)
-
-        y = np.nan_to_num(y)
-
-        labels = np.zeros(len(target_columns), dtype=float)
-        labels[target_columns.index(ebird_code)] = 1.0
-
-        return {"X": y, "y": labels}
+            x = self.waveform_transforms(x)
+        return {"X": np.nan_to_num(x), "y": self.label[idx]}
 
 
 def get_transforms(phase: str):
@@ -500,7 +502,6 @@ class SEDTrainer(object):
             self._train_step(batch)
 
             # check interval
-            self._check_save_interval()
             self._check_log_interval()
 
             # check whether training is finished
@@ -535,15 +536,15 @@ class SEDTrainer(object):
                 average="samples",
                 zero_division=0,
             )
-            self.epoch_train_loss["train/epoch_f1_05_clip"] = metrics.f1_score(
+            self.epoch_train_loss["train/epoch_f1_02_clip"] = metrics.f1_score(
                 self.train_y_epoch,
-                self.train_pred_epoch > 0.5,
+                self.train_pred_epoch > 0.2,
                 average="samples",
                 zero_division=0,
             )
-            self.epoch_train_loss["train/epoch_f1_07_clip"] = metrics.f1_score(
+            self.epoch_train_loss["train/epoch_f1_01_clip"] = metrics.f1_score(
                 self.train_y_epoch,
-                self.train_pred_epoch > 0.7,
+                self.train_pred_epoch > 0.1,
                 average="samples",
                 zero_division=0,
             )
@@ -564,6 +565,7 @@ class SEDTrainer(object):
         # update
         self.train_steps_per_epoch = train_steps_per_epoch
         self.epochs += 1
+        self._check_save_interval()
         # needed for shuffle in distributed training
         if self.config["distributed"]:
             self.train_sampler.set_epoch(self.epochs)
@@ -652,15 +654,15 @@ class SEDTrainer(object):
                 average="samples",
                 zero_division=0,
             )
-            self.epoch_valid_loss["valid/epoch_f1_05_clip"] = metrics.f1_score(
+            self.epoch_valid_loss["valid/epoch_f1_02_clip"] = metrics.f1_score(
                 self.valid_y_epoch,
-                self.valid_pred_epoch > 0.5,
+                self.valid_pred_epoch > 0.2,
                 average="samples",
                 zero_division=0,
             )
-            self.epoch_valid_loss["valid/epoch_f1_07_clip"] = metrics.f1_score(
+            self.epoch_valid_loss["valid/epoch_f1_01_clip"] = metrics.f1_score(
                 self.valid_y_epoch,
-                self.valid_pred_epoch > 0.7,
+                self.valid_pred_epoch > 0.1,
                 average="samples",
                 zero_division=0,
             )
@@ -711,12 +713,14 @@ class SEDTrainer(object):
                 self.writer.add_scalar(key, value, self.steps)
 
     def _check_save_interval(self):
-        if (self.steps % self.config["save_interval_steps"] == 0) and (self.steps != 0):
+        if (self.steps % self.config["save_interval_epochs"] == 0) and (
+            self.epochs != 0
+        ):
             self.save_checkpoint(
                 os.path.join(
                     self.config["outdir"],
-                    f"checkpoint-{self.steps}",
-                    f"checkpoint-{self.steps}{self.save_name}.pkl",
+                    f"checkpoint-{self.epochs}",
+                    f"checkpoint-{self.epochs}{self.save_name}.pkl",
                 ),
                 save_model_only=False,
             )
@@ -743,30 +747,35 @@ class SEDTrainer(object):
 # Training!
 
 # validation
-splitter = getattr(model_selection, config["split"])(**config["split_params"])
+splitter = MultilabelStratifiedKFold(**config["split_params"])
 
 # data
-train = pd.read_csv(config["train_csv"])
+y = np.zeros((len(df), 397))
+for i in range(len(df)):
+    for bird in df.loc[i, "birds"].split(" "):
+        y[i, np.array(target_columns) == bird] = 1.0
 # main loop
-for i, (trn_idx, val_idx) in enumerate(splitter.split(train, y=train["primary_label"])):
+for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
     if i not in config["folds"]:
         continue
     logging.info("=" * 120)
     logging.info(f"Fold {i} Training")
     logging.info("=" * 120)
 
-    trn_df = train.loc[trn_idx, :].reset_index(drop=True)
-    val_df = train.loc[val_idx, :].reset_index(drop=True)
+    trn_df = df.loc[trn_idx, :].reset_index(drop=True)
+    val_df = df.loc[val_idx, :].reset_index(drop=True)
     data_loader = {}
-    for phase, df_ in zip(["valid", "train"], [val_df, trn_df]):
+    for phase, df_, label in zip(
+        ["valid", "train"], [val_df, trn_df], [y[val_idx], y[trn_idx]]
+    ):
         dataset = WaveformDataset(
             df_,
-            config["train_datadir"],
-            img_size=config["img_size"],
+            label=label,
             waveform_transforms=get_transforms(phase),
             period=config["period"],
             validation=(phase == "valid"),
         )
+        logging.info(f"{phase}:{len(dataset)} samples.")
         sampler = None
         if args.distributed:
             logging.info("Use multi gpu.")

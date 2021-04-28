@@ -15,7 +15,7 @@ log() {
 verbose=1               # verbosity level, higher is more logging
 stage=0                 # stage to start
 stop_stage=100          # stage to stop
-n_gpus=8                # number of gpus for training
+n_gpus=4                # number of gpus for training
 n_jobs=2                # number of parallel jobs in feature extraction
 type=wave               # preprocess type.
 speed_facters="0.9 1.1" # The facter of data augmentation.
@@ -31,7 +31,7 @@ resume=""
 # evaluation related
 checkpoint="best_score" # path of checkpoint to be used for evaluation
 train_file="arai_train_tf_efficientnet_b0_ns_faster"
-train_file="arai_train_tf_efficientnet_b7_ns_mgpu"
+train_file="arai_train_tf_efficientnet_b0_ns_mgpu"
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
