@@ -15,29 +15,24 @@ log() {
 verbose=1               # verbosity level, higher is more logging
 stage=0                 # stage to start
 stop_stage=100          # stage to stop
-n_gpus=4                # number of gpus for training
+n_gpus=2                # number of gpus for training
 n_jobs=2                # number of parallel jobs in feature extraction
-type=wave               # preprocess type.
 speed_facters="0.9 1.1" # The facter of data augmentation.
 conf=conf/Cnn14_DecisionLevelAtt.yaml
 
 # directory related
-datadir="../input/rfcx-species-audio-detection"
 dumpdir=dump
 expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
-cache_path="../input/pretrained/Cnn14_DecisionLevelAtt.pth"
 resume=""
 # evaluation related
-checkpoint="best_score" # path of checkpoint to be used for evaluation
-train_file="arai_train_tf_efficientnet_b0_ns_faster"
 train_file="arai_train_tf_efficientnet_b0_ns_mgpu"
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
-tag="${train_file}/lr3e_4"
+tag="${train_file}/lr5e_3"
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
-    log "Stage 2: Network training."
+    log "Stage 1: Network training."
     outdir=${expdir}/${tag}
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Training start. See the progress via ${outdir}/${train_file}.log"

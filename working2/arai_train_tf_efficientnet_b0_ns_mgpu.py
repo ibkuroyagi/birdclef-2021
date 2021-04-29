@@ -1,5 +1,6 @@
 import gc
 import os
+import json
 import argparse
 import sys
 import logging
@@ -8,8 +9,7 @@ import pandas as pd
 import soundfile as sf
 import torch
 import torch.utils.data as torchdata
-
-from pathlib import Path
+import yaml
 from tqdm import tqdm
 from collections import defaultdict
 from tensorboardX import SummaryWriter
@@ -25,7 +25,7 @@ from utils import set_seed  # noqa: E402
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
-BATCH_SIZE = 40  # 40
+BATCH_SIZE = 32
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -96,15 +96,15 @@ config = {
     # Globals #
     ######################
     "seed": 1213,
-    "epochs": 15,
+    "epochs": 2,
     "train": True,
-    "folds": [0, 1, 2, 3, 4],
+    "folds": [0],
     "img_size": 128,
     "n_frame": 128,
     ######################
     # Interval setting #
     ######################
-    "save_interval_epochs": 5,
+    "save_interval_epochs": 2,
     ######################
     # Data #
     ######################
@@ -123,7 +123,7 @@ config = {
     "hop_length": 512,
     "sample_rate": 32000,
     "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
-    "accum_grads": 2,
+    "accum_grads": 1,
     ######################
     # Loaders #
     ######################
@@ -153,7 +153,7 @@ config = {
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 3.0e-4},
+    "optimizer_params": {"lr": 5.0e-3},
     # For SAM optimizer
     "base_optimizer": "Adam",
     ######################
@@ -190,7 +190,8 @@ if DEBUG:
 steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
 config["log_interval_steps"] = steps_per_epoch // 5
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
-
+with open(os.path.join(args.outdir, "config.yml"), "w") as f:
+    yaml.dump(config, f, Dumper=yaml.Dumper)
 
 for key, value in config.items():
     logging.info(f"{key} = {value}")
@@ -357,6 +358,7 @@ class SEDTrainer(object):
         self.valid_y_epoch = np.empty((0, self.n_target))
         self.last_checkpoint = ""
         self.forward_count = 0
+        self.log_dict = {}
 
     def run(self):
         """Run training."""
@@ -453,9 +455,9 @@ class SEDTrainer(object):
             logging.debug(
                 f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
             )
-            self.total_train_loss["train/f1_05"] += metrics.f1_score(
+            self.total_train_loss["train/f1_02"] += metrics.f1_score(
                 y_clip.cpu().numpy(),
-                y_["clipwise_output"].detach().cpu().numpy() > 0.5,
+                y_["clipwise_output"].detach().cpu().numpy() > 0.2,
                 average="samples",
                 zero_division=0,
             )
@@ -512,20 +514,21 @@ class SEDTrainer(object):
                 f"Epoch train  pred clip:{self.train_pred_epoch.shape}{self.train_pred_epoch.sum():.4f}\n"
                 f"Epoch train     y clip:{self.train_y_epoch.shape}{self.train_y_epoch.sum()}\n"
             )
-            if self.config["loss_type"] in [
-                "BCEWithLogitsLoss",
-                "BCEFocalLoss",
-            ]:
-                self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-                    torch.tensor(self.train_pred_epoch).to(self.device),
-                    torch.tensor(self.train_y_epoch).to(self.device),
-                ).item()
-            elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
-                self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-                    torch.tensor(self.train_pred_logit_epoch).to(self.device),
-                    torch.tensor(self.train_pred_logitframe_epoch).to(self.device),
-                    torch.tensor(self.train_y_epoch).to(self.device),
-                ).item()
+            with torch.no_grad():
+                if self.config["loss_type"] in [
+                    "BCEWithLogitsLoss",
+                    "BCEFocalLoss",
+                ]:
+                    self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
+                        torch.tensor(self.train_pred_epoch).to(self.device),
+                        torch.tensor(self.train_y_epoch).to(self.device),
+                    ).item()
+                elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
+                    self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
+                        torch.tensor(self.train_pred_logit_epoch).to(self.device),
+                        torch.tensor(self.train_pred_logitframe_epoch).to(self.device),
+                        torch.tensor(self.train_y_epoch).to(self.device),
+                    ).item()
             self.epoch_train_loss["train/epoch_loss"] = self.epoch_train_loss[
                 "train/epoch_main_loss"
             ]
@@ -709,11 +712,17 @@ class SEDTrainer(object):
     def _write_to_tensorboard(self, loss):
         """Write to tensorboard."""
         if self.train:
+            self.log_dict[self.steps] = {}
             for key, value in loss.items():
                 self.writer.add_scalar(key, value, self.steps)
+                self.log_dict[self.steps][key] = value
+            with open(
+                os.path.join(self.config["outdir"], f"metric{self.save_name}.json"), "w"
+            ) as f:
+                json.dump(self.log_dict, f, indent=4)
 
     def _check_save_interval(self):
-        if (self.steps % self.config["save_interval_epochs"] == 0) and (
+        if (self.epochs % self.config["save_interval_epochs"] == 0) and (
             self.epochs != 0
         ):
             self.save_checkpoint(
