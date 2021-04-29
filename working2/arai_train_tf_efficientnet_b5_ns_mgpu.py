@@ -25,7 +25,7 @@ from utils import set_seed  # noqa: E402
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
-BATCH_SIZE = 4
+BATCH_SIZE = 8
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -139,7 +139,7 @@ config = {
     ######################
     # Model #
     ######################
-    "base_model_name": "tf_efficientnet_b7_ns",
+    "base_model_name": "tf_efficientnet_b5_ns",
     "pooling": "max",
     "pretrained": True,
     "n_target": 397,

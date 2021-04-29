@@ -25,7 +25,7 @@ from utils import set_seed  # noqa: E402
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
-BATCH_SIZE = 4
+BATCH_SIZE = 16
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -123,7 +123,7 @@ config = {
     "hop_length": 512,
     "sample_rate": 32000,
     "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
-    "accum_grads": 4,
+    "accum_grads": 2,
     ######################
     # Loaders #
     ######################
@@ -139,7 +139,7 @@ config = {
     ######################
     # Model #
     ######################
-    "base_model_name": "tf_efficientnet_b7_ns",
+    "base_model_name": "tf_efficientnet_b3_ns",
     "pooling": "max",
     "pretrained": True,
     "n_target": 397,
@@ -153,7 +153,7 @@ config = {
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 3.0e-4},
+    "optimizer_params": {"lr": 1.0e-4},
     # For SAM optimizer
     "base_optimizer": "Adam",
     ######################

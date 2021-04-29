@@ -455,9 +455,9 @@ class SEDTrainer(object):
             logging.debug(
                 f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
             )
-            self.total_train_loss["train/f1_02"] += metrics.f1_score(
+            self.total_train_loss["train/f1_01"] += metrics.f1_score(
                 y_clip.cpu().numpy(),
-                y_["clipwise_output"].detach().cpu().numpy() > 0.2,
+                y_["clipwise_output"].detach().cpu().numpy() > 0.1,
                 average="samples",
                 zero_division=0,
             )
@@ -514,34 +514,33 @@ class SEDTrainer(object):
                 f"Epoch train  pred clip:{self.train_pred_epoch.shape}{self.train_pred_epoch.sum():.4f}\n"
                 f"Epoch train     y clip:{self.train_y_epoch.shape}{self.train_y_epoch.sum()}\n"
             )
-            with torch.no_grad():
-                if self.config["loss_type"] in [
-                    "BCEWithLogitsLoss",
-                    "BCEFocalLoss",
-                ]:
-                    self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-                        torch.tensor(self.train_pred_epoch).to(self.device),
-                        torch.tensor(self.train_y_epoch).to(self.device),
-                    ).item()
-                elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
-                    self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-                        torch.tensor(self.train_pred_logit_epoch).to(self.device),
-                        torch.tensor(self.train_pred_logitframe_epoch).to(self.device),
-                        torch.tensor(self.train_y_epoch).to(self.device),
-                    ).item()
-            self.epoch_train_loss["train/epoch_loss"] = self.epoch_train_loss[
-                "train/epoch_main_loss"
-            ]
-
-            self.epoch_train_loss["train/epoch_f1_03_clip"] = metrics.f1_score(
-                self.train_y_epoch,
-                self.train_pred_epoch > 0.3,
-                average="samples",
-                zero_division=0,
-            )
+            # with torch.no_grad():
+            #     if self.config["loss_type"] in [
+            #         "BCEWithLogitsLoss",
+            #         "BCEFocalLoss",
+            #     ]:
+            #         self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
+            #             torch.tensor(self.train_pred_epoch).to(self.device),
+            #             torch.tensor(self.train_y_epoch).to(self.device),
+            #         ).item()
+            #     elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
+            #         self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
+            #             torch.tensor(self.train_pred_logit_epoch).to(self.device),
+            #             torch.tensor(self.train_pred_logitframe_epoch).to(self.device),
+            #             torch.tensor(self.train_y_epoch).to(self.device),
+            #         ).item()
+            # self.epoch_train_loss["train/epoch_loss"] = self.epoch_train_loss[
+            #     "train/epoch_main_loss"
+            # ]
             self.epoch_train_loss["train/epoch_f1_02_clip"] = metrics.f1_score(
                 self.train_y_epoch,
                 self.train_pred_epoch > 0.2,
+                average="samples",
+                zero_division=0,
+            )
+            self.epoch_train_loss["train/epoch_f1_015_clip"] = metrics.f1_score(
+                self.train_y_epoch,
+                self.train_pred_epoch > 0.15,
                 average="samples",
                 zero_division=0,
             )
@@ -651,15 +650,15 @@ class SEDTrainer(object):
             self.epoch_valid_loss["valid/epoch_loss"] = self.epoch_valid_loss[
                 "valid/epoch_main_loss"
             ]
-            self.epoch_valid_loss["valid/epoch_f1_03_clip"] = metrics.f1_score(
-                self.valid_y_epoch,
-                self.valid_pred_epoch > 0.3,
-                average="samples",
-                zero_division=0,
-            )
             self.epoch_valid_loss["valid/epoch_f1_02_clip"] = metrics.f1_score(
                 self.valid_y_epoch,
                 self.valid_pred_epoch > 0.2,
+                average="samples",
+                zero_division=0,
+            )
+            self.epoch_valid_loss["valid/epoch_f1_015_clip"] = metrics.f1_score(
+                self.valid_y_epoch,
+                self.valid_pred_epoch > 0.15,
                 average="samples",
                 zero_division=0,
             )
@@ -681,8 +680,8 @@ class SEDTrainer(object):
             logging.info(
                 f"(Epoch: {self.epochs}) {key} = {self.epoch_valid_loss[key]:.6f}."
             )
-        if self.epoch_valid_loss["valid/epoch_f1_clip"] > self.best_score:
-            self.best_score = self.epoch_valid_loss["valid/epoch_f1_clip"]
+        if self.epoch_valid_loss["valid/epoch_f1_01_clip"] > self.best_score:
+            self.best_score = self.epoch_valid_loss["valid/epoch_f1_01_clip"]
             logging.info(
                 f"Epochs: {self.epochs}, BEST score was updated {self.best_score:.6f}."
             )

@@ -60,7 +60,7 @@ def parse_args():
         default=29500,
         type=int,
         help="Master node (rank 0)'s free port that needs to "
-        "be used for communciation during distributed "
+        "be used for communication during distributed "
         "training",
     )
     parser.add_argument(
