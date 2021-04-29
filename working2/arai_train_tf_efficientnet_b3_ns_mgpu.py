@@ -16,11 +16,14 @@ from tensorboardX import SummaryWriter
 from sklearn import metrics
 
 sys.path.append("../input/modules")
+import datasets  # noqa: E402
 import losses  # noqa: E402
 import optimizers  # noqa: E402
 from models import TimmSED  # noqa: E402
+from models import mixup_for_sed  # noqa: E402
 from utils import target_columns  # noqa: E402
 from utils import set_seed  # noqa: E402
+from utils import mixup_apply_rate  # noqa: E402
 
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
@@ -114,7 +117,7 @@ config = {
     ######################
     # Dataset #
     ######################
-    "transforms": {"train": [{"name": "Normalize"}], "valid": [{"name": "Normalize"}]},
+    "transforms": {"train": {"Normalize": {}}, "valid": {"Normalize": {}}},
     "period": 20,
     "n_mels": 128,
     "fmin": 20,
@@ -124,6 +127,13 @@ config = {
     "sample_rate": 32000,
     "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
     "accum_grads": 2,
+    ######################
+    # Mixup #
+    ######################
+    "mixup_alpha": 0,  # if you don't use mixup, please input 0.
+    "mode": "const",
+    "max_rate": 0.8,
+    "min_rate": 0.0,
     ######################
     # Loaders #
     ######################
@@ -153,7 +163,7 @@ config = {
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 1.0e-4},
+    "optimizer_params": {"lr": 3.0e-4},
     # For SAM optimizer
     "base_optimizer": "Adam",
     ######################
@@ -259,34 +269,14 @@ def get_transforms(phase: str):
         if transforms[phase] is None:
             return None
         trns_list = []
-        for trns_conf in transforms[phase]:
-            trns_name = trns_conf["name"]
-            trns_params = {} if trns_conf.get("params") is None else trns_conf["params"]
-            if globals().get(trns_name) is not None:
-                trns_cls = globals()[trns_name]
-                trns_list.append(trns_cls(**trns_params))
+        for key, params in transforms[phase].items():
+            trns_cls = getattr(datasets, key)
+            trns_list.append(trns_cls(**params))
 
         if len(trns_list) > 0:
-            return Compose(trns_list)
+            return datasets.Compose(trns_list)
         else:
             return None
-
-
-class Normalize:
-    def __call__(self, y: np.ndarray):
-        max_vol = np.abs(y).max()
-        y_vol = y * 1 / max_vol
-        return np.asfortranarray(y_vol)
-
-
-class Compose:
-    def __init__(self, transforms: list):
-        self.transforms = transforms
-
-    def __call__(self, y: np.ndarray):
-        for trns in self.transforms:
-            y = trns(y)
-        return y
 
 
 class SEDTrainer(object):
@@ -368,7 +358,7 @@ class SEDTrainer(object):
         while True:
             # train one epoch
             self._train_epoch()
-            self._valid_epoch()
+            # self._valid_epoch()
 
             # check whether training is finished
             if self.finish_train:
@@ -436,6 +426,15 @@ class SEDTrainer(object):
         """Train model one step."""
         x = batch["X"].to(self.device)  # (B, mel, T')
         y_clip = batch["y"].to(self.device)
+        if self.config.get("mixup_alpha", 0) > 0:
+            if np.random.rand() < mixup_apply_rate(
+                max_step=self.config["train_max_steps"],
+                step=self.steps,
+                max_rate=self.config.get("max_rate", 1.0),
+                min_rate=self.config.get("min_rate", 0.0),
+                mode=self.config.get("mode", "cos"),
+            ):
+                x, y_clip = mixup_for_sed(x, y_clip, alpha=self.config["mixup_alpha"])
         logging.debug(f"y_clip,{y_clip.shape}:{y_clip[0]}")
         y_ = self.model(x)  # {y_frame: (B, T', n_target), y_clip: (B, n_target)}
         for key, val in y_.items():

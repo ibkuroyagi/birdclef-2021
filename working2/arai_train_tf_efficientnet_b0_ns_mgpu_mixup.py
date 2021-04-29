@@ -30,7 +30,7 @@ from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
 BATCH_SIZE = 32
 
-# ## Config
+# Config
 parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
 )
