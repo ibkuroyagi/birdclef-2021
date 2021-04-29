@@ -143,7 +143,6 @@ class VolumeControl(AudioTransform):
         assert mode in [
             "uniform",
             "fade",
-            "fade",
             "cosine",
             "sine",
         ], "`mode` must be one of 'uniform', 'fade', 'cosine', 'sine'"
@@ -166,3 +165,11 @@ class VolumeControl(AudioTransform):
             db_translated = 10 ** (db * sine / 20)
         augmented = y * db_translated
         return augmented
+
+
+class Normalize:
+    def __call__(self, y: np.ndarray):
+        max_vol = np.abs(y).max()
+        y_vol = y * 1 / max_vol
+        return np.asfortranarray(y_vol)
+

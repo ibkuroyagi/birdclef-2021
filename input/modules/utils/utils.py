@@ -324,3 +324,25 @@ def init_logger(log_file="train.log"):
     logger.addHandler(handler1)
     logger.addHandler(handler2)
     return logger
+
+
+def mixup_apply_rate(max_step=8000, step=0, max_rate=1.0, min_rate=0.0, mode="const"):
+    """Mixup aplly rate.
+
+    Args:
+        max_step (int, optional): Defaults to 8000.
+        step (int, optional): Defaults to 0.
+        max_rate (float, optional): Defaults to 1.0.
+        min_rate (float, optional): Defaults to 0.0.
+        mode (str, optional): Defaults to "const".
+    """
+    if mode == "const":
+        return max(min(max_rate, 1.0), 0.0)
+    elif mode == "cos":
+        tmp = np.cos(np.pi / 2 * step / max_step)
+        p = tmp * (max_rate - min_rate) + min_rate
+        return p
+    elif mode == "sin":
+        tmp = np.sin(np.pi * step / max_step)
+        p = tmp * (max_rate - min_rate) + min_rate
+        return p

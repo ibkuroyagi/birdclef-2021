@@ -75,14 +75,16 @@ git clone https://github.com/ibkuroyagi/birdclef-2021.git
 # 環境構築
 cd birdclef-2021/tools
 make
+make apex
 ```
 <details><summary>slurm用にヒアドキュメントを使用する場合</summary><div>
 
 ```
 cd birdclef-2021/tools
-sbatch -c 4 -w million2 << EOF
+sbatch << EOF
 #!/bin/bash
 make
+make apex
 EOF
 ```
 
@@ -130,7 +132,7 @@ EOF
 - short audioに対してpseudo-labelして学習データを厳選してから再度学習
 
 
-## 実験結果からの気づき
+### 実験結果からの気づき
 - 
 ### 実験したモデルたち
 - 

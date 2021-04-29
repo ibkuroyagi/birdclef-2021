@@ -117,7 +117,18 @@ config = {
     ######################
     # Dataset #
     ######################
-    "transforms": {"train": {"Normalize": {}}, "valid": {"Normalize": {}}},
+    "transforms": {
+        "train": {
+            "Normalize": {},
+            "VolumeControl": {
+                "always_apply": False,
+                "p": 0.8,
+                "db_limit": 10,
+                "mode": "uniform",
+            },
+        },
+        "valid": {"Normalize": {}},
+    },
     "period": 20,
     "n_mels": 128,
     "fmin": 20,
@@ -130,7 +141,7 @@ config = {
     ######################
     # Mixup #
     ######################
-    "mixup_alpha": 0,  # if you don't use mixup, please input 0.
+    "mixup_alpha": 1,  # if you don't use mixup, please input 0.
     "mode": "const",
     "max_rate": 0.8,
     "min_rate": 0.0,
@@ -163,7 +174,7 @@ config = {
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 5.0e-3},
+    "optimizer_params": {"lr": 2.0e-3},
     # For SAM optimizer
     "base_optimizer": "Adam",
     ######################
@@ -358,7 +369,7 @@ class SEDTrainer(object):
         while True:
             # train one epoch
             self._train_epoch()
-            # self._valid_epoch()
+            self._valid_epoch()
 
             # check whether training is finished
             if self.finish_train:
@@ -694,7 +705,7 @@ class SEDTrainer(object):
 
         logging.info(f"(Steps: {self.steps}) Start valid data's validation.")
         # record
-        self._write_to_tensorboard(self.epoch_valid_loss)
+        self._write_to_tensorboard(self.epoch_valid_loss, "valid")
 
         # reset
         self.epoch_valid_loss = defaultdict(float)
@@ -707,13 +718,13 @@ class SEDTrainer(object):
         # restore mode
         self.model.train()
 
-    def _write_to_tensorboard(self, loss):
+    def _write_to_tensorboard(self, loss, phase="train"):
         """Write to tensorboard."""
         if self.train:
-            self.log_dict[self.steps] = {}
+            self.log_dict[self.steps] = {phase: {}}
             for key, value in loss.items():
                 self.writer.add_scalar(key, value, self.steps)
-                self.log_dict[self.steps][key] = value
+                self.log_dict[self.steps][phase][key] = value
             with open(
                 os.path.join(self.config["outdir"], f"metric{self.save_name}.json"), "w"
             ) as f:
