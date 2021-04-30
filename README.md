@@ -112,28 +112,29 @@ EOF
 - 
 
 ## 決定事項
-[x] trainにもvalidationにも、short_audioとsoundscapeの両方を用いる
+- [x] trainにもvalidationにも、short_audioとsoundscapeの両方を用いる
     - ただし、soundscapeは各5秒数ごとに切る前提を置く。そしてバリデーションをする場合長い系列のfoldに合わせる。
     - nocallは排除して考える
-[x] b0, b7, b5, b3の優先順位でlrの探索をする
+- [x] b0, b7, b5, b3の優先順位でlrの探索をする
     - lrはバッチサイズ64で固定し2epochで10回検証データを計算しloss, f1スコアで比較する
     - lr: 1e-4, 3e-4, 8e-4, 2e-3, 5e-3
-[ ] data augmentation
+- [ ] data augmentation
     - ボリュームを0.8~1.2倍
     - mixup
     - specaug (default)
-    [ ] fold0のb0, 20epochで比較
+    - [ ] fold0のb0, 20epochで比較
         - なにもなし
         - 3つの比較をする
-    [ ] fold0のb7, 20epochで比較
+    - [ ] fold0のb7, 20epochで比較
         - なにもなし
         - 3つの比較をする
-[ ] wavenetはmixupの後
-[ ] short audioに対してpseudo-labelして学習データを厳選してから再度学習
+- [ ] wavenetはmixupの後
+- [ ] short audioに対してpseudo-labelして学習データを厳選してから再度学習
 
 
 ### 実験結果からの気づき
-- 
+- 最適なlr
+    - b0 : 2e-3, b3 : 2e-3, b5 : , b7 : 2e-3
 ### 実験したモデルたち
 - 
 ### 今の課題は何?

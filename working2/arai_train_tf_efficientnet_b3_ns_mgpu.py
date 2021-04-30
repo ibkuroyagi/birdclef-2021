@@ -163,7 +163,7 @@ config = {
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 3.0e-4},
+    "optimizer_params": {"lr": 1.0e-2},
     # For SAM optimizer
     "base_optimizer": "Adam",
     ######################
@@ -620,7 +620,7 @@ class SEDTrainer(object):
         logging.info(f"(Steps: {self.steps}) Start dev data's validation.")
         # change mode
         self.model.eval()
-
+        self.model.training = False
         # calculate loss for each batch
         for valid_steps_per_epoch, batch in enumerate(
             tqdm(self.data_loader["valid"], desc="[valid]"), 1
@@ -705,6 +705,7 @@ class SEDTrainer(object):
             (0, self.config["n_frame"], self.config["n_target"])
         )
         # restore mode
+        self.model.training = True
         self.model.train()
 
     def _write_to_tensorboard(self, loss):

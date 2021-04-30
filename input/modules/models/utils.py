@@ -68,9 +68,9 @@ def mixup_for_sed(X: torch.tensor, Y: torch.tensor, alpha=0.2):
     with torch.no_grad():
         batch_size = X.size(0)
         perm = torch.randperm(batch_size).to(X.device)
-        if alpha == 1:
+        if alpha == 1.0:
             mixed_X = X + X[perm]
-            mixed_Y = Y + Y[perm]
+            mixed_Y = Y.to(torch.int64) | Y[perm].to(torch.int64)
         else:
             lam = torch.tensor(
                 np.random.beta(alpha, alpha, batch_size), dtype=torch.float32

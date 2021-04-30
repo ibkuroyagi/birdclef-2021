@@ -28,7 +28,7 @@ from utils import mixup_apply_rate  # noqa: E402
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
-BATCH_SIZE = 32
+BATCH_SIZE = 4
 
 # Config
 parser = argparse.ArgumentParser(
@@ -160,7 +160,7 @@ config = {
     ######################
     # Model #
     ######################
-    "base_model_name": "tf_efficientnet_b0_ns",
+    "base_model_name": "tf_efficientnet_b7_ns",
     "pooling": "max",
     "pretrained": True,
     "n_target": 397,
