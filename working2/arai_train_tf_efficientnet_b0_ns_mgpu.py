@@ -99,7 +99,7 @@ config = {
     # Globals #
     ######################
     "seed": 1213,
-    "epochs": 2,
+    "epochs": 20,
     "train": True,
     "folds": [0],
     "img_size": 128,

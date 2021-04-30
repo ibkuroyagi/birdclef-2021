@@ -15,8 +15,8 @@ log() {
 verbose=1               # verbosity level, higher is more logging
 stage=0                 # stage to start
 stop_stage=100          # stage to stop
-n_gpus=4                # number of gpus for training
-n_jobs=4                # number of parallel jobs in feature extraction
+n_gpus=2                # number of gpus for training
+n_jobs=2                # number of parallel jobs in feature extraction
 speed_facters="0.9 1.1" # The facter of data augmentation.
 
 # directory related
@@ -25,18 +25,18 @@ expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
 resume=""
 # evaluation related
-train_file="arai_train_tf_efficientnet_b7_ns_mgpu_mixup"
+train_file="arai_train_tf_efficientnet_b0_ns_mgpu"
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
-tag="${train_file}/lr2e_3"
+tag="${train_file}/no_aug"
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 1: Network training."
     outdir=${expdir}/${tag}
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Training start. See the progress via ${outdir}/${train_file}.log"
     if [ "${n_gpus}" -gt 1 ]; then
-        train="python ../input/modules/distributed/launch.py --master_port 29509 --nproc_per_node ${n_gpus} ${train_file}.py"
+        train="python ../input/modules/distributed/launch.py --master_port 29508 --nproc_per_node ${n_gpus} ${train_file}.py"
     else
         train="python ${train_file}.py"
     fi
