@@ -26,7 +26,7 @@ expdir=exp # directory to save experiments
 resume=""
 # evaluation related
 train_file="arai_train_tf_efficientnet_b0_ns_mgpu"
-
+fold=4
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
 tag="${train_file}/no_aug"
@@ -34,18 +34,19 @@ if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 1: Network training."
     outdir=${expdir}/${tag}
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
-    log "Training start. See the progress via ${outdir}/${train_file}.log"
+    log "Training start. See the progress via ${outdir}/${train_file}${fold}.log"
     if [ "${n_gpus}" -gt 1 ]; then
-        train="python ../input/modules/distributed/launch.py --master_port 29508 --nproc_per_node ${n_gpus} ${train_file}.py"
+        train="python ../input/modules/distributed/launch.py --master_port 29502 --nproc_per_node ${n_gpus} ${train_file}.py"
     else
         train="python ${train_file}.py"
     fi
     # shellcheck disable=SC2086,SC2154
-    ${train_cmd} --num_threads "${n_jobs}" --gpu "${n_gpus}" "${outdir}/${train_file}.log" \
+    ${train_cmd} --num_threads "${n_jobs}" --gpu "${n_gpus}" "${outdir}/${train_file}${fold}.log" \
         ${train} \
         --resume ${resume} \
         --outdir ${outdir} \
         --n_gpus ${n_gpus} \
+        --fold ${fold} \
         --verbose ${verbose}
 
     log "Successfully finished the training."

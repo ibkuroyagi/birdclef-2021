@@ -52,6 +52,9 @@ parser.add_argument(
     help="logging level. higher is more logging. (default=1)",
 )
 parser.add_argument(
+    "--fold", default=0, type=int, help="Fold. (default=0)",
+)
+parser.add_argument(
     "--rank",
     "--local_rank",
     default=0,
@@ -101,13 +104,13 @@ config = {
     "seed": 1213,
     "epochs": 20,
     "train": True,
-    "folds": [0],
+    "folds": [args.fold],
     "img_size": 128,
     "n_frame": 128,
     ######################
     # Interval setting #
     ######################
-    "save_interval_epochs": 2,
+    "save_interval_epochs": 5,
     ######################
     # Data #
     ######################
@@ -200,7 +203,7 @@ DEBUG = False
 if DEBUG:
     config["epochs"] = 1
 steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
-config["log_interval_steps"] = steps_per_epoch // 5
+config["log_interval_steps"] = steps_per_epoch // 2
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
 with open(os.path.join(args.outdir, "config.yml"), "w") as f:
     yaml.dump(config, f, Dumper=yaml.Dumper)
@@ -326,7 +329,9 @@ class SEDTrainer(object):
         self.device = device
         self.train = train
         if train:
-            self.writer = SummaryWriter(config["outdir"])
+            if not os.path.exists(os.path.join(config["outdir"], save_name)):
+                os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
+            self.writer = SummaryWriter(os.path.join(config["outdir"], save_name))
         self.save_name = save_name
 
         self.finish_train = False
@@ -851,7 +856,7 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
         scheduler=scheduler,
         config=config,
         device=device,
-        train=i == 0,
+        train=True,
         save_name=f"fold{i}",
     )
     # resume from checkpoint

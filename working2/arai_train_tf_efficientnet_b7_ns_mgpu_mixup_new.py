@@ -28,9 +28,9 @@ from utils import mixup_apply_rate  # noqa: E402
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
-BATCH_SIZE = 4
+BATCH_SIZE = 8
 
-# Config
+# ## Config
 parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
 )
@@ -141,9 +141,9 @@ config = {
     ######################
     # Mixup #
     ######################
-    "mixup_alpha": 1,  # if you don't use mixup, please input 0.
-    "mode": "const",
-    "max_rate": 0.8,
+    "mixup_alpha": 0.2,  # if you don't use mixup, please input 0.
+    "mode": "sin",
+    "max_rate": 1.0,
     "min_rate": 0.0,
     ######################
     # Loaders #
@@ -175,8 +175,10 @@ config = {
     ######################
     "optimizer_type": "Adam",
     "optimizer_params": {"lr": 2.0e-3},
+    # "optimizer_type": "SAM",
+    # "optimizer_params": {"lr": 2.0e-3, "base_optimizer": optimizers.Adam},
     # For SAM optimizer
-    "base_optimizer": "Adam",
+    # "base_optimizer": "Adam",
     ######################
     # Scheduler #
     ######################
@@ -209,7 +211,7 @@ DEBUG = False
 if DEBUG:
     config["epochs"] = 1
 steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
-config["log_interval_steps"] = steps_per_epoch // 5
+config["log_interval_steps"] = steps_per_epoch // 2
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
 with open(os.path.join(args.outdir, "config.yml"), "w") as f:
     yaml.dump(config, f, Dumper=yaml.Dumper)
@@ -369,7 +371,7 @@ class SEDTrainer(object):
         while True:
             # train one epoch
             self._train_epoch()
-            self._valid_epoch()
+            # self._valid_epoch()
 
             # check whether training is finished
             if self.finish_train:
@@ -705,7 +707,7 @@ class SEDTrainer(object):
 
         logging.info(f"(Steps: {self.steps}) Start valid data's validation.")
         # record
-        self._write_to_tensorboard(self.epoch_valid_loss, "valid")
+        self._write_to_tensorboard(self.epoch_valid_loss)
 
         # reset
         self.epoch_valid_loss = defaultdict(float)
@@ -719,17 +721,17 @@ class SEDTrainer(object):
         self.model.training = True
         self.model.train()
 
-    def _write_to_tensorboard(self, loss, phase="train"):
+    def _write_to_tensorboard(self, loss):
         """Write to tensorboard."""
-        self.log_dict[self.steps] = {phase: {}}
-        for key, value in loss.items():
-            if self.train:
+        if self.train:
+            self.log_dict[self.steps] = {}
+            for key, value in loss.items():
                 self.writer.add_scalar(key, value, self.steps)
-            self.log_dict[self.steps][phase][key] = value
-        with open(
-            os.path.join(self.config["outdir"], f"metric{self.save_name}.json"), "w"
-        ) as f:
-            json.dump(self.log_dict, f, indent=4)
+                self.log_dict[self.steps][key] = value
+            with open(
+                os.path.join(self.config["outdir"], f"metric{self.save_name}.json"), "w"
+            ) as f:
+                json.dump(self.log_dict, f, indent=4)
 
     def _check_save_interval(self):
         if (self.epochs % self.config["save_interval_epochs"] == 0) and (
