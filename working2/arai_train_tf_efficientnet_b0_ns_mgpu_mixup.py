@@ -30,11 +30,12 @@ from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
 BATCH_SIZE = 32
 
-# Config
+# ## Config
 parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
 )
 parser.add_argument("--outdir", type=str, required=True, help="name of outdir.")
+parser.add_argument("--save_name", type=str, default="", help="name of save file.")
 parser.add_argument(
     "--resume",
     default=[],
@@ -50,6 +51,9 @@ parser.add_argument(
     default=1,
     type=int,
     help="logging level. higher is more logging. (default=1)",
+)
+parser.add_argument(
+    "--fold", default=0, type=int, help="Fold. (default=0)",
 )
 parser.add_argument(
     "--rank",
@@ -101,7 +105,7 @@ config = {
     "seed": 1213,
     "epochs": 20,
     "train": True,
-    "folds": [0],
+    "folds": [args.fold],
     "img_size": 128,
     "n_frame": 128,
     ######################
@@ -168,20 +172,22 @@ config = {
     ######################
     # Criterion #
     ######################
-    "loss_type": "BCEFocal2WayLoss",
+    "loss_type": "BCE2WayLoss",
     "loss_params": {},
     ######################
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
     "optimizer_params": {"lr": 2.0e-3},
+    # "optimizer_type": "SAM",
+    # "optimizer_params": {"lr": 2.0e-3, "base_optimizer": optimizers.Adam},
     # For SAM optimizer
-    "base_optimizer": "Adam",
+    # "base_optimizer": "Adam",
     ######################
     # Scheduler #
     ######################
     "scheduler_type": "CosineAnnealingLR",
-    "scheduler_params": {"T_max": 10},
+    "scheduler_params": {"T_max": 10},  # "eta_min": 1.0e-4
 }
 config.update(vars(args))
 
@@ -209,9 +215,12 @@ DEBUG = False
 if DEBUG:
     config["epochs"] = 1
 steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
-config["log_interval_steps"] = steps_per_epoch // 5
+config["log_interval_steps"] = steps_per_epoch // 2
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
-with open(os.path.join(args.outdir, "config.yml"), "w") as f:
+save_name = f"fold{config['folds'][0]}{args.save_name}"
+if not os.path.exists(os.path.join(config["outdir"], save_name)):
+    os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
+with open(os.path.join(args.outdir, save_name, "config.yml"), "w") as f:
     yaml.dump(config, f, Dumper=yaml.Dumper)
 
 for key, value in config.items():
@@ -335,7 +344,9 @@ class SEDTrainer(object):
         self.device = device
         self.train = train
         if train:
-            self.writer = SummaryWriter(config["outdir"])
+            if not os.path.exists(os.path.join(config["outdir"], save_name)):
+                os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
+            self.writer = SummaryWriter(os.path.join(config["outdir"], save_name))
         self.save_name = save_name
 
         self.finish_train = False
@@ -369,7 +380,7 @@ class SEDTrainer(object):
         while True:
             # train one epoch
             self._train_epoch()
-            self._valid_epoch()
+            # self._valid_epoch()
 
             # check whether training is finished
             if self.finish_train:
@@ -455,7 +466,7 @@ class SEDTrainer(object):
             "BCEFocalLoss",
         ]:
             loss = self.criterion(y_["clipwise_output"], y_clip)
-        elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
+        elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
             loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
         if not torch.isnan(loss):
             loss = loss / self.config["accum_grads"]
@@ -524,24 +535,6 @@ class SEDTrainer(object):
                 f"Epoch train  pred clip:{self.train_pred_epoch.shape}{self.train_pred_epoch.sum():.4f}\n"
                 f"Epoch train     y clip:{self.train_y_epoch.shape}{self.train_y_epoch.sum()}\n"
             )
-            # with torch.no_grad():
-            #     if self.config["loss_type"] in [
-            #         "BCEWithLogitsLoss",
-            #         "BCEFocalLoss",
-            #     ]:
-            #         self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-            #             torch.tensor(self.train_pred_epoch).to(self.device),
-            #             torch.tensor(self.train_y_epoch).to(self.device),
-            #         ).item()
-            #     elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
-            #         self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-            #             torch.tensor(self.train_pred_logit_epoch).to(self.device),
-            #             torch.tensor(self.train_pred_logitframe_epoch).to(self.device),
-            #             torch.tensor(self.train_y_epoch).to(self.device),
-            #         ).item()
-            # self.epoch_train_loss["train/epoch_loss"] = self.epoch_train_loss[
-            #     "train/epoch_main_loss"
-            # ]
             self.epoch_train_loss["train/epoch_f1_02_clip"] = metrics.f1_score(
                 self.train_y_epoch,
                 self.train_pred_epoch > 0.2,
@@ -596,14 +589,6 @@ class SEDTrainer(object):
         x = batch["X"].to(self.device)
         y_clip = batch["y"].to(self.device)
         y_ = self.model(x)
-        # if self.config["loss_type"] in [
-        #     "BCEWithLogitsLoss",
-        #     "BCEFocalLoss",
-        # ]:
-        #     loss = self.criterion(y_["clipwise_output"], y_clip)
-        # elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
-        #     loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
-        # add to total valid loss
         self.valid_pred_logit_epoch = np.concatenate(
             [self.valid_pred_logit_epoch, y_["logit"].detach().cpu().numpy()], axis=0,
         )
@@ -651,7 +636,7 @@ class SEDTrainer(object):
                     torch.tensor(self.valid_pred_epoch).to(self.device),
                     torch.tensor(self.valid_y_epoch).to(self.device),
                 ).item()
-            elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
+            elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
                 self.epoch_valid_loss["valid/epoch_main_loss"] = self.criterion(
                     torch.tensor(self.valid_pred_logit_epoch).to(self.device),
                     torch.tensor(self.valid_pred_logitframe_epoch).to(self.device),
@@ -705,7 +690,7 @@ class SEDTrainer(object):
 
         logging.info(f"(Steps: {self.steps}) Start valid data's validation.")
         # record
-        self._write_to_tensorboard(self.epoch_valid_loss, "valid")
+        self._write_to_tensorboard(self.epoch_valid_loss)
 
         # reset
         self.epoch_valid_loss = defaultdict(float)
@@ -719,17 +704,17 @@ class SEDTrainer(object):
         self.model.training = True
         self.model.train()
 
-    def _write_to_tensorboard(self, loss, phase="train"):
+    def _write_to_tensorboard(self, loss):
         """Write to tensorboard."""
-        self.log_dict[self.steps] = {phase: {}}
-        for key, value in loss.items():
-            if self.train:
+        if self.train:
+            self.log_dict[self.steps] = {}
+            for key, value in loss.items():
                 self.writer.add_scalar(key, value, self.steps)
-            self.log_dict[self.steps][phase][key] = value
-        with open(
-            os.path.join(self.config["outdir"], f"metric{self.save_name}.json"), "w"
-        ) as f:
-            json.dump(self.log_dict, f, indent=4)
+                self.log_dict[self.steps][key] = value
+            with open(
+                os.path.join(self.config["outdir"], f"metric{self.save_name}.json"), "w"
+            ) as f:
+                json.dump(self.log_dict, f, indent=4)
 
     def _check_save_interval(self):
         if (self.epochs % self.config["save_interval_epochs"] == 0) and (
@@ -860,8 +845,8 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
         scheduler=scheduler,
         config=config,
         device=device,
-        train=i == 0,
-        save_name=f"fold{i}",
+        train=True,
+        save_name=save_name,
     )
     # resume from checkpoint
     if len(args.resume) != 0:

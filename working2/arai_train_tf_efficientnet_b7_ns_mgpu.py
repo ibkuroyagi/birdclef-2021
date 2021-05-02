@@ -16,11 +16,14 @@ from tensorboardX import SummaryWriter
 from sklearn import metrics
 
 sys.path.append("../input/modules")
+import datasets  # noqa: E402
 import losses  # noqa: E402
 import optimizers  # noqa: E402
 from models import TimmSED  # noqa: E402
+from models import mixup_for_sed  # noqa: E402
 from utils import target_columns  # noqa: E402
 from utils import set_seed  # noqa: E402
+from utils import mixup_apply_rate  # noqa: E402
 
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
@@ -32,6 +35,7 @@ parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
 )
 parser.add_argument("--outdir", type=str, required=True, help="name of outdir.")
+parser.add_argument("--save_name", type=str, default="", help="name of save file.")
 parser.add_argument(
     "--resume",
     default=[],
@@ -47,6 +51,9 @@ parser.add_argument(
     default=1,
     type=int,
     help="logging level. higher is more logging. (default=1)",
+)
+parser.add_argument(
+    "--fold", default=0, type=int, help="Fold. (default=0)",
 )
 parser.add_argument(
     "--rank",
@@ -98,7 +105,7 @@ config = {
     "seed": 1213,
     "epochs": 20,
     "train": True,
-    "folds": [0],
+    "folds": [args.fold],
     "img_size": 128,
     "n_frame": 128,
     ######################
@@ -114,7 +121,7 @@ config = {
     ######################
     # Dataset #
     ######################
-    "transforms": {"train": [{"name": "Normalize"}], "valid": [{"name": "Normalize"}]},
+    "transforms": {"train": {"Normalize": {}}, "valid": {"Normalize": {}}},
     "period": 20,
     "n_mels": 128,
     "fmin": 20,
@@ -123,7 +130,14 @@ config = {
     "hop_length": 512,
     "sample_rate": 32000,
     "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
-    "accum_grads": 4,
+    "accum_grads": 2,
+    ######################
+    # Mixup #
+    ######################
+    "mixup_alpha": 0,  # if you don't use mixup, please input 0.
+    "mode": "const",
+    "max_rate": 0.8,
+    "min_rate": 0.0,
     ######################
     # Loaders #
     ######################
@@ -147,20 +161,22 @@ config = {
     ######################
     # Criterion #
     ######################
-    "loss_type": "BCEFocal2WayLoss",
+    "loss_type": "BCE2WayLoss",
     "loss_params": {},
     ######################
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
     "optimizer_params": {"lr": 2.0e-3},
+    # "optimizer_type": "SAM",
+    # "optimizer_params": {"lr": 2.0e-3, "base_optimizer": optimizers.Adam},
     # For SAM optimizer
-    "base_optimizer": "Adam",
+    # "base_optimizer": "Adam",
     ######################
     # Scheduler #
     ######################
     "scheduler_type": "CosineAnnealingLR",
-    "scheduler_params": {"T_max": 10},
+    "scheduler_params": {"T_max": 10},  # "eta_min": 1.0e-4
 }
 config.update(vars(args))
 
@@ -188,9 +204,12 @@ DEBUG = False
 if DEBUG:
     config["epochs"] = 1
 steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
-config["log_interval_steps"] = steps_per_epoch // 5
+config["log_interval_steps"] = steps_per_epoch // 2
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
-with open(os.path.join(args.outdir, "config.yml"), "w") as f:
+save_name = f"fold{config['folds'][0]}{args.save_name}"
+if not os.path.exists(os.path.join(config["outdir"], save_name)):
+    os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
+with open(os.path.join(args.outdir, save_name, "config.yml"), "w") as f:
     yaml.dump(config, f, Dumper=yaml.Dumper)
 
 for key, value in config.items():
@@ -259,34 +278,14 @@ def get_transforms(phase: str):
         if transforms[phase] is None:
             return None
         trns_list = []
-        for trns_conf in transforms[phase]:
-            trns_name = trns_conf["name"]
-            trns_params = {} if trns_conf.get("params") is None else trns_conf["params"]
-            if globals().get(trns_name) is not None:
-                trns_cls = globals()[trns_name]
-                trns_list.append(trns_cls(**trns_params))
+        for key, params in transforms[phase].items():
+            trns_cls = getattr(datasets, key)
+            trns_list.append(trns_cls(**params))
 
         if len(trns_list) > 0:
-            return Compose(trns_list)
+            return datasets.Compose(trns_list)
         else:
             return None
-
-
-class Normalize:
-    def __call__(self, y: np.ndarray):
-        max_vol = np.abs(y).max()
-        y_vol = y * 1 / max_vol
-        return np.asfortranarray(y_vol)
-
-
-class Compose:
-    def __init__(self, transforms: list):
-        self.transforms = transforms
-
-    def __call__(self, y: np.ndarray):
-        for trns in self.transforms:
-            y = trns(y)
-        return y
 
 
 class SEDTrainer(object):
@@ -334,7 +333,9 @@ class SEDTrainer(object):
         self.device = device
         self.train = train
         if train:
-            self.writer = SummaryWriter(config["outdir"])
+            if not os.path.exists(os.path.join(config["outdir"], save_name)):
+                os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
+            self.writer = SummaryWriter(os.path.join(config["outdir"], save_name))
         self.save_name = save_name
 
         self.finish_train = False
@@ -368,7 +369,7 @@ class SEDTrainer(object):
         while True:
             # train one epoch
             self._train_epoch()
-            self._valid_epoch()
+            # self._valid_epoch()
 
             # check whether training is finished
             if self.finish_train:
@@ -436,6 +437,15 @@ class SEDTrainer(object):
         """Train model one step."""
         x = batch["X"].to(self.device)  # (B, mel, T')
         y_clip = batch["y"].to(self.device)
+        if self.config.get("mixup_alpha", 0) > 0:
+            if np.random.rand() < mixup_apply_rate(
+                max_step=self.config["train_max_steps"],
+                step=self.steps,
+                max_rate=self.config.get("max_rate", 1.0),
+                min_rate=self.config.get("min_rate", 0.0),
+                mode=self.config.get("mode", "cos"),
+            ):
+                x, y_clip = mixup_for_sed(x, y_clip, alpha=self.config["mixup_alpha"])
         logging.debug(f"y_clip,{y_clip.shape}:{y_clip[0]}")
         y_ = self.model(x)  # {y_frame: (B, T', n_target), y_clip: (B, n_target)}
         for key, val in y_.items():
@@ -445,7 +455,7 @@ class SEDTrainer(object):
             "BCEFocalLoss",
         ]:
             loss = self.criterion(y_["clipwise_output"], y_clip)
-        elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
+        elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
             loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
         if not torch.isnan(loss):
             loss = loss / self.config["accum_grads"]
@@ -514,24 +524,6 @@ class SEDTrainer(object):
                 f"Epoch train  pred clip:{self.train_pred_epoch.shape}{self.train_pred_epoch.sum():.4f}\n"
                 f"Epoch train     y clip:{self.train_y_epoch.shape}{self.train_y_epoch.sum()}\n"
             )
-            # with torch.no_grad():
-            #     if self.config["loss_type"] in [
-            #         "BCEWithLogitsLoss",
-            #         "BCEFocalLoss",
-            #     ]:
-            #         self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-            #             torch.tensor(self.train_pred_epoch).to(self.device),
-            #             torch.tensor(self.train_y_epoch).to(self.device),
-            #         ).item()
-            #     elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
-            #         self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-            #             torch.tensor(self.train_pred_logit_epoch).to(self.device),
-            #             torch.tensor(self.train_pred_logitframe_epoch).to(self.device),
-            #             torch.tensor(self.train_y_epoch).to(self.device),
-            #         ).item()
-            # self.epoch_train_loss["train/epoch_loss"] = self.epoch_train_loss[
-            #     "train/epoch_main_loss"
-            # ]
             self.epoch_train_loss["train/epoch_f1_02_clip"] = metrics.f1_score(
                 self.train_y_epoch,
                 self.train_pred_epoch > 0.2,
@@ -586,14 +578,6 @@ class SEDTrainer(object):
         x = batch["X"].to(self.device)
         y_clip = batch["y"].to(self.device)
         y_ = self.model(x)
-        # if self.config["loss_type"] in [
-        #     "BCEWithLogitsLoss",
-        #     "BCEFocalLoss",
-        # ]:
-        #     loss = self.criterion(y_["clipwise_output"], y_clip)
-        # elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
-        #     loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
-        # add to total valid loss
         self.valid_pred_logit_epoch = np.concatenate(
             [self.valid_pred_logit_epoch, y_["logit"].detach().cpu().numpy()], axis=0,
         )
@@ -641,7 +625,7 @@ class SEDTrainer(object):
                     torch.tensor(self.valid_pred_epoch).to(self.device),
                     torch.tensor(self.valid_y_epoch).to(self.device),
                 ).item()
-            elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
+            elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
                 self.epoch_valid_loss["valid/epoch_main_loss"] = self.criterion(
                     torch.tensor(self.valid_pred_logit_epoch).to(self.device),
                     torch.tensor(self.valid_pred_logitframe_epoch).to(self.device),
@@ -850,8 +834,8 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
         scheduler=scheduler,
         config=config,
         device=device,
-        train=i == 0,
-        save_name=f"fold{i}",
+        train=True,
+        save_name=save_name,
     )
     # resume from checkpoint
     if len(args.resume) != 0:

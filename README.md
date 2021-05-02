@@ -130,6 +130,8 @@ EOF
         - 3つの比較をする
 - [ ] 5foldの推論とポストプロセスを実行
     - oofはpredと答えが欲しいb7-mixup
+    - 推論は20秒ごとに切り取って、logitをnumpyとして保持。その後5秒のdfに変換してnpzに保存。対応するdfを作成。
+    - 系列情報も保持したいので、
 - [ ] short audioに対してpseudo-labelして学習データを厳選してから再度学習
 - [ ] wavenetはmixupの後
 - [ ] https://github.com/Cadene/pretrained-models.pytorch#senet のse_resnext101_32x4dを変更する
@@ -138,6 +140,9 @@ EOF
 - 最適なlr
     - b0 : 2e-3, b3 : 2e-3, b5 : 5e-3 , b7 : 2e-3
     - 2epoch時点でのベストの精度比較: b0 > b3 > b5 > b7
+- focal lossの影響ですべて0を出力モデルに途中でなってしまう問題が発生
+    - BCEWithLogitsLossで解決
+
 ### 実験したモデルたち
 - 
 ### 今の課題は何?

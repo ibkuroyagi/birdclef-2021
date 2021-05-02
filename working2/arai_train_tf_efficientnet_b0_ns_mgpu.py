@@ -35,6 +35,7 @@ parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
 )
 parser.add_argument("--outdir", type=str, required=True, help="name of outdir.")
+parser.add_argument("--save_name", type=str, default="", help="name of save file.")
 parser.add_argument(
     "--resume",
     default=[],
@@ -160,7 +161,7 @@ config = {
     ######################
     # Criterion #
     ######################
-    "loss_type": "BCEFocal2WayLoss",
+    "loss_type": "BCE2WayLoss",
     "loss_params": {},
     ######################
     # Optimizer #
@@ -175,7 +176,7 @@ config = {
     # Scheduler #
     ######################
     "scheduler_type": "CosineAnnealingLR",
-    "scheduler_params": {"T_max": 10},
+    "scheduler_params": {"T_max": 10},  # "eta_min": 1.0e-4
 }
 config.update(vars(args))
 
@@ -205,7 +206,10 @@ if DEBUG:
 steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
 config["log_interval_steps"] = steps_per_epoch // 2
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
-with open(os.path.join(args.outdir, "config.yml"), "w") as f:
+save_name = f"fold{config['folds'][0]}{args.save_name}"
+if not os.path.exists(os.path.join(config["outdir"], save_name)):
+    os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
+with open(os.path.join(args.outdir, save_name, "config.yml"), "w") as f:
     yaml.dump(config, f, Dumper=yaml.Dumper)
 
 for key, value in config.items():
@@ -451,7 +455,7 @@ class SEDTrainer(object):
             "BCEFocalLoss",
         ]:
             loss = self.criterion(y_["clipwise_output"], y_clip)
-        elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
+        elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
             loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
         if not torch.isnan(loss):
             loss = loss / self.config["accum_grads"]
@@ -520,24 +524,6 @@ class SEDTrainer(object):
                 f"Epoch train  pred clip:{self.train_pred_epoch.shape}{self.train_pred_epoch.sum():.4f}\n"
                 f"Epoch train     y clip:{self.train_y_epoch.shape}{self.train_y_epoch.sum()}\n"
             )
-            # with torch.no_grad():
-            #     if self.config["loss_type"] in [
-            #         "BCEWithLogitsLoss",
-            #         "BCEFocalLoss",
-            #     ]:
-            #         self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-            #             torch.tensor(self.train_pred_epoch).to(self.device),
-            #             torch.tensor(self.train_y_epoch).to(self.device),
-            #         ).item()
-            #     elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
-            #         self.epoch_train_loss["train/epoch_main_loss"] = self.criterion(
-            #             torch.tensor(self.train_pred_logit_epoch).to(self.device),
-            #             torch.tensor(self.train_pred_logitframe_epoch).to(self.device),
-            #             torch.tensor(self.train_y_epoch).to(self.device),
-            #         ).item()
-            # self.epoch_train_loss["train/epoch_loss"] = self.epoch_train_loss[
-            #     "train/epoch_main_loss"
-            # ]
             self.epoch_train_loss["train/epoch_f1_02_clip"] = metrics.f1_score(
                 self.train_y_epoch,
                 self.train_pred_epoch > 0.2,
@@ -592,14 +578,6 @@ class SEDTrainer(object):
         x = batch["X"].to(self.device)
         y_clip = batch["y"].to(self.device)
         y_ = self.model(x)
-        # if self.config["loss_type"] in [
-        #     "BCEWithLogitsLoss",
-        #     "BCEFocalLoss",
-        # ]:
-        #     loss = self.criterion(y_["clipwise_output"], y_clip)
-        # elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
-        #     loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
-        # add to total valid loss
         self.valid_pred_logit_epoch = np.concatenate(
             [self.valid_pred_logit_epoch, y_["logit"].detach().cpu().numpy()], axis=0,
         )
@@ -647,7 +625,7 @@ class SEDTrainer(object):
                     torch.tensor(self.valid_pred_epoch).to(self.device),
                     torch.tensor(self.valid_y_epoch).to(self.device),
                 ).item()
-            elif self.config["loss_type"] in ["BCEFocal2WayLoss"]:
+            elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
                 self.epoch_valid_loss["valid/epoch_main_loss"] = self.criterion(
                     torch.tensor(self.valid_pred_logit_epoch).to(self.device),
                     torch.tensor(self.valid_pred_logitframe_epoch).to(self.device),
@@ -857,7 +835,7 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
         config=config,
         device=device,
         train=True,
-        save_name=f"fold{i}",
+        save_name=save_name,
     )
     # resume from checkpoint
     if len(args.resume) != 0:

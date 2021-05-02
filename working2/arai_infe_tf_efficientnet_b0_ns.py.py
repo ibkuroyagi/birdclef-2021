@@ -33,25 +33,25 @@ from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 BATCH_SIZE = 32
 
 # Config
-parser = argparse.ArgumentParser(
-    description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
-)
-parser.add_argument("--outdir", type=str, required=True, help="name of outdir.")
-parser.add_argument(
-    "--resume",
-    default=[],
-    type=str,
-    nargs="*",
-    help="checkpoint file path to resume training. (default=[])",
-)
-parser.add_argument(
-    "--verbose",
-    default=1,
-    type=int,
-    help="logging level. higher is more logging. (default=1)",
-)
-args = parser.parse_args()
-args.distributed = False
+# parser = argparse.ArgumentParser(
+#     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
+# )
+# parser.add_argument("--outdir", type=str, required=True, help="name of outdir.")
+# parser.add_argument(
+#     "--resume",
+#     default=[],
+#     type=str,
+#     nargs="*",
+#     help="checkpoint file path to resume training. (default=[])",
+# )
+# parser.add_argument(
+#     "--verbose",
+#     default=1,
+#     type=int,
+#     help="logging level. higher is more logging. (default=1)",
+# )
+# args = parser.parse_args()
+# args.distributed = False
 if not torch.cuda.is_available():
     device = torch.device("cpu")
 else:
@@ -163,7 +163,6 @@ logger = get_logger("main.log")
 TEST = len(list(Path("../input/birdclef-2021/test_soundscapes/").glob("*.ogg"))) != 0
 if TEST:
     DATADIR = Path("../input/birdclef-2021/test_soundscapes/")
-    save
 else:
     DATADIR = Path("../input/birdclef-2021/train_soundscapes/")
 
@@ -189,9 +188,8 @@ class TestDataset(torchdata.Dataset):
         SR = 32000
         sample = self.df.loc[idx, :]
         row_id = sample.row_id
-
-        end_seconds = int(sample.seconds)
-        start_seconds = int(end_seconds - 5)
+        start_seconds = int(sample.seconds - 5)
+        end_seconds = start_seconds + config["periods"]
 
         start_index = SR * start_seconds
         end_index = SR * end_seconds
@@ -226,20 +224,7 @@ def get_transforms(phase: str):
             return None
 
 
-# %%
-def prepare_model_for_inference(model, path: Path):
-    if not torch.cuda.is_available():
-        ckpt = torch.load(path, map_location="cpu")
-    else:
-        ckpt = torch.load(path)
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
-    return model
-
-
-def load_checkpoint(
-    self, model, checkpoint_path, load_only_params=False, distributed=False
-):
+def load_checkpoint(model, checkpoint_path, load_only_params=False, distributed=False):
     """Load checkpoint.
 
     Args:
@@ -248,7 +233,7 @@ def load_checkpoint(
 
     """
     state_dict = torch.load(checkpoint_path, map_location="cpu")
-    if config["distributed"]:
+    if distributed:
         model.module.load_state_dict(state_dict["model"])
     else:
         model.load_state_dict(state_dict["model"])
@@ -257,7 +242,9 @@ def load_checkpoint(
         epochs = state_dict["epochs"]
         best_score = state_dict.get("best_score", 0)
         logging.info(f"Steps:{steps}, Epochs:{epochs}, BEST score:{best_score}")
-    return model
+        # print(f"Steps:{steps}, Epochs:{epochs}, BEST score:{best_score}")
+    return model.eval()
+
 
 
 # %%
@@ -300,7 +287,9 @@ def prediction(test_audios, weights_path: Path, threshold=0.5):
         num_classes=config["num_classes"],
         in_channels=config["in_channels"],
     )
-    model = prepare_model_for_inference(model, weights_path).to(device)
+    model = load_checkpoint(
+        model, weights_path, load_only_params=False, distributed=False
+    ).to(device)
 
     warnings.filterwarnings("ignore")
     prediction_dfs = []
@@ -310,7 +299,7 @@ def prediction(test_audios, weights_path: Path, threshold=0.5):
 
         seconds = []
         row_ids = []
-        for second in range(5, 605, 5):
+        for second in range(5, 605 - config["periods"], 5):
             row_id = "_".join(audio_path.name.split("_")[:2]) + f"_{second}"
             seconds.append(second)
             row_ids.append(row_id)
@@ -330,7 +319,8 @@ def prediction(test_audios, weights_path: Path, threshold=0.5):
 
 
 # %%
-weights_path = Path("../input/birdclef2021-effnetb0-starter-weight/best.pth")
+
+ = Path("../input/birdclef2021-effnetb0-starter-weight/best.pth")
 submission = prediction(
     test_audios=all_audios, weights_path=weights_path, threshold=0.5
 )

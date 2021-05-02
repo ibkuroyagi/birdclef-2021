@@ -52,6 +52,9 @@ parser.add_argument(
     help="logging level. higher is more logging. (default=1)",
 )
 parser.add_argument(
+    "--fold", default=0, type=int, help="Fold. (default=0)",
+)
+parser.add_argument(
     "--rank",
     "--local_rank",
     default=0,
@@ -468,7 +471,7 @@ class SEDTrainer(object):
                 f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
             )
             self.total_train_loss["train/f1_01"] += metrics.f1_score(
-                y_clip.cpu().numpy(),
+                y_clip.cpu().numpy() > 0,
                 y_["clipwise_output"].detach().cpu().numpy() > 0.1,
                 average="samples",
                 zero_division=0,
@@ -545,19 +548,19 @@ class SEDTrainer(object):
             #     "train/epoch_main_loss"
             # ]
             self.epoch_train_loss["train/epoch_f1_02_clip"] = metrics.f1_score(
-                self.train_y_epoch,
+                self.train_y_epoch > 0,
                 self.train_pred_epoch > 0.2,
                 average="samples",
                 zero_division=0,
             )
             self.epoch_train_loss["train/epoch_f1_015_clip"] = metrics.f1_score(
-                self.train_y_epoch,
+                self.train_y_epoch > 0,
                 self.train_pred_epoch > 0.15,
                 average="samples",
                 zero_division=0,
             )
             self.epoch_train_loss["train/epoch_f1_01_clip"] = metrics.f1_score(
-                self.train_y_epoch,
+                self.train_y_epoch > 0,
                 self.train_pred_epoch > 0.1,
                 average="samples",
                 zero_division=0,
