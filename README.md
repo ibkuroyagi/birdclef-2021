@@ -130,8 +130,10 @@ EOF
         - 3つの比較をする
 - [ ] 5foldの推論とポストプロセスを実行
     - oofはpredと答えが欲しいb7-mixup
+    - nocallについては5foldの平均を計算
     - 推論は20秒ごとに切り取って、logitをnumpyとして保持。その後5秒のdfに変換してnpzに保存。対応するdfを作成。
-    - 系列情報も保持したいので、
+    - 系列情報も保持したいので、それも渡す
+    - train_short_audioとtrain_sound_scapeの両方のoofをconcatしたら簡単にvalidに使えるようにして渡す
 - [ ] short audioに対してpseudo-labelして学習データを厳選してから再度学習
 - [ ] wavenetはmixupの後
 - [ ] https://github.com/Cadene/pretrained-models.pytorch#senet のse_resnext101_32x4dを変更する

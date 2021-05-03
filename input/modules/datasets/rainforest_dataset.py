@@ -123,10 +123,7 @@ class RainForestDataset(Dataset):
         ):
             compose_list = []
             for key in self.config["augmentation_params"].keys():
-                aug_class = getattr(
-                    datasets,
-                    key,
-                )
+                aug_class = getattr(datasets, key,)
                 compose_list.append(
                     aug_class(**self.config["augmentation_params"][key])
                 )

@@ -28,7 +28,7 @@ from utils import mixup_apply_rate  # noqa: E402
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
-BATCH_SIZE = 4
+BATCH_SIZE = 32
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -106,8 +106,8 @@ config = {
     "epochs": 20,
     "train": True,
     "folds": [args.fold],
-    "img_size": 256,
-    "n_frame": 256,
+    "img_size": 128,
+    "n_frame": 128,
     ######################
     # Interval setting #
     ######################
@@ -134,14 +134,14 @@ config = {
         "valid": {"Normalize": {}},
     },
     "period": 20,
-    "n_mels": 256,
+    "n_mels": 128,
     "fmin": 20,
     "fmax": 16000,
     "n_fft": 2048,
     "hop_length": 512,
     "sample_rate": 32000,
-    "melspectrogram_parameters": {"n_mels": 256, "fmin": 20, "fmax": 16000},
-    "accum_grads": 2,
+    "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
+    "accum_grads": 1,
     ######################
     # Mixup #
     ######################
@@ -164,7 +164,7 @@ config = {
     ######################
     # Model #
     ######################
-    "base_model_name": "tf_efficientnet_b7_ns",
+    "base_model_name": "tf_efficientnet_b0_ns",
     "pooling": "max",
     "pretrained": True,
     "n_target": 397,
@@ -446,7 +446,7 @@ class SEDTrainer(object):
 
     def _train_step(self, batch):
         """Train model one step."""
-        x = batch["X"].to(self.device)  # (B, mel, T')
+        x = batch["X"].to(self.device)
         y_clip = batch["y"].to(self.device)
         if self.config.get("mixup_alpha", 0) > 0:
             if np.random.rand() < mixup_apply_rate(
@@ -472,17 +472,17 @@ class SEDTrainer(object):
             loss = loss / self.config["accum_grads"]
             loss.backward()
             self.forward_count += 1
+            self.total_train_loss["train/loss"] += loss.item()
+            logging.debug(
+                f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
+            )
+            self.total_train_loss["train/f1_01"] += metrics.f1_score(
+                y_clip.cpu().numpy() > 0,
+                y_["clipwise_output"].detach().cpu().numpy() > 0.1,
+                average="samples",
+                zero_division=0,
+            )
             if self.forward_count == self.config["accum_grads"]:
-                self.total_train_loss["train/loss"] += loss.item()
-                logging.debug(
-                    f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
-                )
-                self.total_train_loss["train/f1_01"] += metrics.f1_score(
-                    y_clip.cpu().numpy() > 0,
-                    y_["clipwise_output"].detach().cpu().numpy() > 0.1,
-                    average="samples",
-                    zero_division=0,
-                )
                 # update parameters
                 self.optimizer.step()
                 self.optimizer.zero_grad()
@@ -747,6 +747,8 @@ class SEDTrainer(object):
         if self.steps >= self.config["train_max_steps"]:
             self.finish_train = True
 
+
+# Training!
 
 # validation
 splitter = MultilabelStratifiedKFold(**config["split_params"])

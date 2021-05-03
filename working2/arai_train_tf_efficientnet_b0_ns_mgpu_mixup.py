@@ -145,7 +145,7 @@ config = {
     ######################
     # Mixup #
     ######################
-    "mixup_alpha": 1,  # if you don't use mixup, please input 0.
+    "mixup_alpha": 1.0,  # if you don't use mixup, please input 0.
     "mode": "const",
     "max_rate": 0.8,
     "min_rate": 0.0,
