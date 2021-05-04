@@ -144,7 +144,8 @@ EOF
     - 2epoch時点でのベストの精度比較: b0 > b3 > b5 > b7
 - focal lossの影響ですべて0を出力モデルに途中でなってしまう問題が発生
     - BCEWithLogitsLossで解決
-
+- lrのminが0になるとvalidで悪影響なので、lrのminは1e-4にする
+- mixupはsin制御が良好
 ### 実験したモデルたち
 - 
 ### 今の課題は何?

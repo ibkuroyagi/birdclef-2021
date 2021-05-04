@@ -366,3 +366,7 @@ def mixup_apply_rate(max_step=8000, step=0, max_rate=1.0, min_rate=0.0, mode="co
         tmp = np.sin(np.pi * step / max_step)
         p = tmp * (max_rate - min_rate) + min_rate
         return p
+
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))

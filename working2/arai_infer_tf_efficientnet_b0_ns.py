@@ -4,7 +4,6 @@ import argparse
 import os
 import sys
 import time
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -118,7 +117,7 @@ config = {
     ######################
     # Loaders #
     ######################
-    "loader_params": {"valid": {"batch_size": BATCH_SIZE, "num_workers": 2},},
+    "loader_params": {"valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2}},
     ######################
     # Split #
     ######################
@@ -218,7 +217,7 @@ class WaveformDataset(torchdata.Dataset):
         return len(self.df)
 
     def __getitem__(self, idx: int):
-        path, bird = self.df.loc[idx, "path"], self.df.loc[idx, "birds"]
+        path = self.df.loc[idx, "path"]
         x, sr = sf.read(path)
         len_x = len(x)
         effective_length = sr * self.period
@@ -315,10 +314,11 @@ for i, path in enumerate(path_list):
             x = batch["X"].to(device)
             y_ = model(x)
             pred_y_clip_fold = np.concatenate(
-                [pred_y_clip_fold, y_["logit"].cpu().numpy()], axis=0
+                [pred_y_clip_fold, torch.sigmoid(y_["logit"]).cpu().numpy()], axis=0
             )
             pred_y_frame_fold = np.concatenate(
-                [pred_y_frame_fold, y_["framewise_logit"].cpu().numpy()], axis=0
+                [pred_y_frame_fold, torch.sigmoid(y_["framewise_logit"]).cpu().numpy()],
+                axis=0,
             )
     pred_y_clip[val_idx] = pred_y_clip_fold
     pred_y_frame[val_idx] = pred_y_frame_fold
@@ -330,17 +330,19 @@ for i, path in enumerate(path_list):
     )
     logger.info(f"fold {i} clip f1 0.1:{clip_f1:.4f}, frame f1:{frame_f1:.4f}")
     logger.info(f"Finish fold {i}")
-np.savetxt(os.path.join(config["outdir"], save_name, "pred_y_clip.npz"), pred_y_clip)
-np.savetxt(os.path.join(config["outdir"], save_name, "pred_y_frame.npz"), pred_y_frame)
+np.save(os.path.join(config["outdir"], save_name, "pred_y_clip.npy"), pred_y_clip)
+np.save(os.path.join(config["outdir"], save_name, "pred_y_frame.npy"), pred_y_frame)
 # calculate oof f1 score
 best_clip_f1 = 0
 best_frame_f1 = 0
-for threshold in np.arange(5, 50, 1):
+best_clip_thred = 0.05
+best_frame_thred = 0.05
+for threshold in np.arange(0.05, 0.5, 0.01):
     clip_f1 = metrics.f1_score(
-        label, pred_y_clip > threshold, average="samples", zero_division=0,
+        y, pred_y_clip > threshold, average="samples", zero_division=0,
     )
     frame_f1 = metrics.f1_score(
-        label, pred_y_frame.max(axis=1) > threshold, average="samples", zero_division=0,
+        y, pred_y_frame.max(axis=1) > threshold, average="samples", zero_division=0,
     )
     if clip_f1 > best_clip_f1:
         best_clip_f1 = clip_f1

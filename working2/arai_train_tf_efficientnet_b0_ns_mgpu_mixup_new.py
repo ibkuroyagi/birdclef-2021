@@ -23,6 +23,7 @@ from models import TimmSED  # noqa: E402
 from models import mixup_for_sed  # noqa: E402
 from utils import target_columns  # noqa: E402
 from utils import set_seed  # noqa: E402
+from utils import sigmoid  # noqa: E402
 from utils import mixup_apply_rate  # noqa: E402
 
 sys.path.append("../input/iterative-stratification-master")
@@ -103,7 +104,7 @@ config = {
     # Globals #
     ######################
     "seed": 1213,
-    "epochs": 20,
+    "epochs": 30,
     "train": True,
     "folds": [args.fold],
     "img_size": 128,
@@ -178,11 +179,9 @@ config = {
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 2.0e-3},
-    # "optimizer_type": "SAM",
-    # "optimizer_params": {"lr": 2.0e-3, "base_optimizer": optimizers.Adam},
+    "optimizer_params": {"lr": 2.0e-3, "weight_decay": 1.0e-5},
     # For SAM optimizer
-    # "base_optimizer": "Adam",
+    "base_optimizer": "SGD",
     ######################
     # Scheduler #
     ######################
@@ -446,7 +445,7 @@ class SEDTrainer(object):
 
     def _train_step(self, batch):
         """Train model one step."""
-        x = batch["X"].to(self.device)
+        x = batch["X"].to(self.device)  # (B, mel, T')
         y_clip = batch["y"].to(self.device)
         if self.config.get("mixup_alpha", 0) > 0:
             if np.random.rand() < mixup_apply_rate(
@@ -469,20 +468,28 @@ class SEDTrainer(object):
         elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
             loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
         if not torch.isnan(loss):
-            loss = loss / self.config["accum_grads"]
-            loss.backward()
             self.forward_count += 1
-            self.total_train_loss["train/loss"] += loss.item()
-            logging.debug(
-                f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
-            )
-            self.total_train_loss["train/f1_01"] += metrics.f1_score(
-                y_clip.cpu().numpy() > 0,
-                y_["clipwise_output"].detach().cpu().numpy() > 0.1,
-                average="samples",
-                zero_division=0,
-            )
+            if (self.config["accum_grads"] > self.forward_count) and self.config[
+                "distributed"
+            ]:
+                with self.model.no_sync():
+                    loss = loss / self.config["accum_grads"]
+                    loss.backward()
+            else:
+                loss = loss / self.config["accum_grads"]
+                loss.backward()
+
             if self.forward_count == self.config["accum_grads"]:
+                self.total_train_loss["train/loss"] += loss.item()
+                logging.debug(
+                    f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
+                )
+                self.total_train_loss["train/f1_01"] += metrics.f1_score(
+                    y_clip.cpu().numpy() > 0,
+                    y_["clipwise_output"].detach().cpu().numpy() > 0.1,
+                    average="samples",
+                    zero_division=0,
+                )
                 # update parameters
                 self.optimizer.step()
                 self.optimizer.zero_grad()
@@ -550,6 +557,18 @@ class SEDTrainer(object):
             self.epoch_train_loss["train/epoch_f1_01_clip"] = metrics.f1_score(
                 self.train_y_epoch > 0,
                 self.train_pred_epoch > 0.1,
+                average="samples",
+                zero_division=0,
+            )
+            self.epoch_train_loss["train/epoch_f1_02_frame"] = metrics.f1_score(
+                self.train_y_epoch > 0,
+                sigmoid(self.train_pred_logitframe_epoch.max(axis=1)) > 0.2,
+                average="samples",
+                zero_division=0,
+            )
+            self.epoch_train_loss["train/epoch_f1_01_frame"] = metrics.f1_score(
+                self.train_y_epoch > 0,
+                sigmoid(self.train_pred_logitframe_epoch.max(axis=1)) > 0.1,
                 average="samples",
                 zero_division=0,
             )
@@ -663,6 +682,18 @@ class SEDTrainer(object):
                 average="samples",
                 zero_division=0,
             )
+            self.epoch_valid_loss["valid/epoch_f1_02_frame"] = metrics.f1_score(
+                self.valid_y_epoch > 0,
+                sigmoid(self.valid_pred_logitframe_epoch.max(axis=1)) > 0.2,
+                average="samples",
+                zero_division=0,
+            )
+            self.epoch_valid_loss["valid/epoch_f1_01_frame"] = metrics.f1_score(
+                self.valid_y_epoch > 0,
+                sigmoid(self.valid_pred_logitframe_epoch.max(axis=1)) > 0.1,
+                average="samples",
+                zero_division=0,
+            )
         except ValueError:
             logging.warning("Raise ValueError: May be contain NaN in y_pred.")
             pass
@@ -748,8 +779,6 @@ class SEDTrainer(object):
             self.finish_train = True
 
 
-# Training!
-
 # validation
 splitter = MultilabelStratifiedKFold(**config["split_params"])
 
@@ -807,6 +836,7 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
         pretrained=config["pretrained"],
         num_classes=config["n_target"],
         in_channels=config["in_channels"],
+        n_mels=config["n_mels"],
     )
     if args.distributed:
         try:
@@ -816,7 +846,10 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
                 "Apex is not installed. Please check https://github.com/NVIDIA/apex."
             )
         # NOTE(ibkuroyagi): Needed to place the model on GPU
-        model = DistributedDataParallel(model.to(device))
+        # model = DistributedDataParallel(model.to(device))
+        model = torch.nn.parallel.DistributedDataParallel(
+            model.to(device), device_ids=[args.rank], output_device=args.rank,
+        )
     if i == 0:
         logging.info(model)
     loss_class = getattr(losses, config.get("loss_type", "BCEWithLogitsLoss"),)
@@ -826,13 +859,17 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
             pos_weight, dtype=torch.float
         ).to(device)
     criterion = loss_class(**config["loss_params"]).to(device)
-    optimizer_class = getattr(optimizers, config.get("optimizer_type", "Adam"),)
-    optimizer = optimizer_class(model.parameters(), **config["optimizer_params"])
+    optimizer_class = getattr(optimizers, config["optimizer_type"])
+    if config["optimizer_type"] == "SAM":
+        base_optimizer = getattr(optimizers, config["base_optimizer"])
+        optimizer = optimizer_class(
+            model.parameters(), base_optimizer, **config["optimizer_params"]
+        )
+    else:
+        optimizer = optimizer_class(model.parameters(), **config["optimizer_params"])
     scheduler = None
     if config.get("scheduler_type", None) is not None:
-        scheduler_class = getattr(
-            torch.optim.lr_scheduler, config.get("scheduler_type", "StepLR"),
-        )
+        scheduler_class = getattr(torch.optim.lr_scheduler, config["scheduler_type"],)
         scheduler = scheduler_class(optimizer=optimizer, **config["scheduler_params"])
     trainer = SEDTrainer(
         steps=0,
