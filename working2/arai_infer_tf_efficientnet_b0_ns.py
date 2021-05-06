@@ -351,9 +351,11 @@ for threshold in np.arange(0.05, 0.5, 0.01):
         best_frame_f1 = frame_f1
         best_frame_thred = threshold
     logger.info(
-        f"threshold:{threshold:d}, clip f1:{clip_f1:.4f}, frame f1:{frame_f1:.4f}"
+        f"threshold:{threshold:.2f}, clip f1:{clip_f1:.4f}, frame f1:{frame_f1:.4f}"
     )
-logger.info(f"best clip threshold:{best_clip_thred:d}, best_clip_f1:{best_clip_f1:.4f}")
 logger.info(
-    f"best frame threshold:{best_frame_thred:d}, best_frame_f1:{best_frame_f1:.4f}"
+    f"best clip threshold:{best_clip_thred:.2f}, best_clip_f1:{best_clip_f1:.4f}"
+)
+logger.info(
+    f"best frame threshold:{best_frame_thred:.2f}, best_frame_f1:{best_frame_f1:.4f}"
 )
