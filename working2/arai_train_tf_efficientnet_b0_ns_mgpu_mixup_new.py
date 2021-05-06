@@ -181,7 +181,7 @@ config = {
     "optimizer_type": "Adam",
     "optimizer_params": {"lr": 2.0e-3, "weight_decay": 1.0e-5},
     # For SAM optimizer
-    "base_optimizer": "SGD",
+    # "base_optimizer": "SGD",
     ######################
     # Scheduler #
     ######################
@@ -469,15 +469,15 @@ class SEDTrainer(object):
             loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
         if not torch.isnan(loss):
             self.forward_count += 1
-            if (self.config["accum_grads"] > self.forward_count) and self.config[
-                "distributed"
-            ]:
-                with self.model.no_sync():
-                    loss = loss / self.config["accum_grads"]
-                    loss.backward()
-            else:
-                loss = loss / self.config["accum_grads"]
-                loss.backward()
+            # if (self.config["accum_grads"] > self.forward_count) and self.config[
+            #     "distributed"
+            # ]:
+            #     with self.model.no_sync():
+            #         loss = loss / self.config["accum_grads"]
+            #         loss.backward()
+            # else:
+            loss = loss / self.config["accum_grads"]
+            loss.backward()
 
             if self.forward_count == self.config["accum_grads"]:
                 self.total_train_loss["train/loss"] += loss.item()
@@ -846,10 +846,10 @@ for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
                 "Apex is not installed. Please check https://github.com/NVIDIA/apex."
             )
         # NOTE(ibkuroyagi): Needed to place the model on GPU
-        # model = DistributedDataParallel(model.to(device))
-        model = torch.nn.parallel.DistributedDataParallel(
-            model.to(device), device_ids=[args.rank], output_device=args.rank,
-        )
+        model = DistributedDataParallel(model.to(device))
+        # model = torch.nn.parallel.DistributedDataParallel(
+        #     model.to(device), device_ids=[args.rank], output_device=args.rank,
+        # )
     if i == 0:
         logging.info(model)
     loss_class = getattr(losses, config.get("loss_type", "BCEWithLogitsLoss"),)

@@ -473,17 +473,18 @@ class SEDTrainer(object):
             loss.backward()
             self.forward_count += 1
             self.total_train_loss["train/loss"] += loss.item()
-            logging.debug(
-                f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
-            )
-            self.total_train_loss["train/f1_01"] += metrics.f1_score(
-                y_clip.cpu().numpy(),
-                y_["clipwise_output"].detach().cpu().numpy() > 0.1,
-                average="samples",
-                zero_division=0,
-            )
+
             if self.forward_count == self.config["accum_grads"]:
                 # update parameters
+                logging.debug(
+                    f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
+                )
+                self.total_train_loss["train/f1_01"] += metrics.f1_score(
+                    y_clip.cpu().numpy(),
+                    y_["clipwise_output"].detach().cpu().numpy() > 0.1,
+                    average="samples",
+                    zero_division=0,
+                )
                 self.optimizer.step()
                 self.optimizer.zero_grad()
                 self.forward_count = 0

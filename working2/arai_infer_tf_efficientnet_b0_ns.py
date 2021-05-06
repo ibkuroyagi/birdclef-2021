@@ -1,4 +1,3 @@
-# %%
 import logging
 import argparse
 import os
@@ -15,7 +14,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
-# from albumentations.core.transforms_interface import ImageOnlyTransform
 from tqdm import tqdm
 from sklearn import metrics
 
@@ -195,7 +193,7 @@ df.to_csv(os.path.join(config["outdir"], save_name, "train_y.csv"), index=False)
 
 path_list = config["resume"]
 pred_y_clip = np.zeros((len(df), config["n_target"]))
-pred_y_frame = np.zeros((len(df), config["n_frame"], config["n_target"]))
+pred_y_frame = np.zeros((len(df), config["n_target"]))
 
 
 class WaveformDataset(torchdata.Dataset):
@@ -308,7 +306,7 @@ for i, path in enumerate(path_list):
         **config["loader_params"]["valid"],
     )
     pred_y_clip_fold = np.empty((0, config["n_target"]))
-    pred_y_frame_fold = np.empty((0, config["n_frame"], config["n_target"]))
+    pred_y_frame_fold = np.empty((0, config["n_target"]))
     with torch.no_grad():
         for batch in tqdm(data_loader):
             x = batch["X"].to(device)
@@ -317,19 +315,31 @@ for i, path in enumerate(path_list):
                 [pred_y_clip_fold, torch.sigmoid(y_["logit"]).cpu().numpy()], axis=0
             )
             pred_y_frame_fold = np.concatenate(
-                [pred_y_frame_fold, torch.sigmoid(y_["framewise_logit"]).cpu().numpy()],
+                [
+                    pred_y_frame_fold,
+                    torch.sigmoid(y_["framewise_logit"]).cpu().numpy().max(axis=1),
+                ],
                 axis=0,
             )
-    pred_y_clip[val_idx] = pred_y_clip_fold
-    pred_y_frame[val_idx] = pred_y_frame_fold
+    pred_y_clip[val_idx] = pred_y_clip_fold.copy()
+    pred_y_frame[val_idx] = pred_y_frame_fold.copy()
     clip_f1 = metrics.f1_score(
-        label, pred_y_clip_fold > 0.1, average="samples", zero_division=0,
+        label, pred_y_clip[val_idx] > 0.1, average="samples", zero_division=0,
     )
     frame_f1 = metrics.f1_score(
-        label, pred_y_frame_fold.max(axis=1) > 0.1, average="samples", zero_division=0,
+        label, pred_y_frame[val_idx] > 0.1, average="samples", zero_division=0,
     )
     logger.info(f"fold {i} clip f1 0.1:{clip_f1:.4f}, frame f1:{frame_f1:.4f}")
     logger.info(f"Finish fold {i}")
+    # np.save(
+    #     os.path.join(config["outdir"], save_name, f"pred_y_clip{i}.npy"),
+    #     pred_y_clip_fold,
+    # )
+    # np.save(
+    #     os.path.join(config["outdir"], save_name, f"pred_y_frame{i}.npy"),
+    #     pred_y_frame_fold,
+    # )
+np.save(os.path.join(config["outdir"], save_name, "train_y.npy"), y)
 np.save(os.path.join(config["outdir"], save_name, "pred_y_clip.npy"), pred_y_clip)
 np.save(os.path.join(config["outdir"], save_name, "pred_y_frame.npy"), pred_y_frame)
 # calculate oof f1 score
@@ -342,7 +352,7 @@ for threshold in np.arange(0.05, 0.5, 0.01):
         y, pred_y_clip > threshold, average="samples", zero_division=0,
     )
     frame_f1 = metrics.f1_score(
-        y, pred_y_frame.max(axis=1) > threshold, average="samples", zero_division=0,
+        y, pred_y_frame > threshold, average="samples", zero_division=0,
     )
     if clip_f1 > best_clip_f1:
         best_clip_f1 = clip_f1
