@@ -706,8 +706,8 @@ class SEDTrainer(object):
             logging.info(
                 f"(Epoch: {self.epochs}) {key} = {self.epoch_valid_loss[key]:.6f}."
             )
-        if self.epoch_valid_loss["valid/epoch_f1_01_clip"] > self.best_score:
-            self.best_score = self.epoch_valid_loss["valid/epoch_f1_01_clip"]
+        if self.epoch_valid_loss["valid/epoch_f1_01_frame"] > self.best_score:
+            self.best_score = self.epoch_valid_loss["valid/epoch_f1_01_frame"]
             logging.info(
                 f"Epochs: {self.epochs}, BEST score was updated {self.best_score:.6f}."
             )

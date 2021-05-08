@@ -111,12 +111,6 @@ config = {
     ######################
     "save_interval_epochs": 5,
     ######################
-    # Data #
-    ######################
-    "train_datadir": "../input/birdclef-2021/train_short_audio",
-    "train_csv": "../input/birdclef-2021/train_metadata.csv",
-    "train_soundscape": "../input/birdclef-2021/train_soundscape_labels.csv",
-    ######################
     # Dataset #
     ######################
     "transforms": {
@@ -166,7 +160,7 @@ config = {
     # Criterion #
     ######################
     "loss_type": "BCE2WayLoss",
-    "loss_params": {},
+    "loss_params": {"pos_weight": None},
     ######################
     # Optimizer #
     ######################
@@ -185,10 +179,12 @@ config.update(vars(args))
 # this notebook is by default run on debug mode (only train one epoch).
 # If you'd like to get the results on par with that of inference notebook, you'll need to train the model around 30 epochs
 
-train_short_audio_df = pd.read_csv(f"dump/train_short_audio_{config['period']}sec.csv")
+train_short_audio_df = pd.read_csv("dump/relabel20sec/relabel.csv")
 train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
-soundscape = soundscape[soundscape["birds"] != "nocall"]
+soundscape = soundscape[
+    (soundscape["birds"] != "nocall") | (soundscape["dataset"] == "soundscape")
+]
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
 ALL_DATA = len(df)
 DEBUG = False

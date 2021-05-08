@@ -15,11 +15,11 @@ from utils import target_columns  # noqa: E402
 from utils import best_th  # noqa: E402
 
 BATCH_SIZE = 32
-input_dir = "../input/birdclef-2021"
 split_sec = 20
 outdir = f"dump/relabel{split_sec}sec"
 save_name = "b0_no_aug"
-train_soundscape = pd.read_csv(os.path.join(input_dir, "train_soundscape_labels.csv"))
+if not os.path.exists(os.path.join(outdir, save_name)):
+    os.makedirs(os.path.join(outdir, save_name), exist_ok=True)
 train_short_audio_df = pd.read_csv(f"dump/train_short_audio_{split_sec}sec.csv")
 # data
 y = np.zeros((len(train_short_audio_df), 397))
@@ -34,7 +34,7 @@ if not torch.cuda.is_available():
     device = torch.device("cpu")
 else:
     device = torch.device("cuda")
-
+# device = "cpu"
 config = {
     ######################
     # Globals #
@@ -44,31 +44,11 @@ config = {
     "train": True,
     "img_size": 128,
     "n_frame": 128,
-    ######################
-    # Interval setting #
-    ######################
-    "save_interval_epochs": 5,
-    ######################
-    # Data #
-    ######################
-    "train_datadir": "../input/birdclef-2021/train_short_audio",
-    "train_csv": "../input/birdclef-2021/train_metadata.csv",
     "train_soundscape": "../input/birdclef-2021/train_soundscape_labels.csv",
     ######################
     # Dataset #
     ######################
-    "transforms": {
-        "train": {
-            "Normalize": {},
-            "VolumeControl": {
-                "always_apply": False,
-                "p": 0.8,
-                "db_limit": 10,
-                "mode": "uniform",
-            },
-        },
-        "valid": {"Normalize": {}},
-    },
+    "transforms": {"valid": {"Normalize": {}}},
     "period": 20,
     "n_mels": 128,
     "fmin": 20,
@@ -79,24 +59,9 @@ config = {
     "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
     "accum_grads": 1,
     ######################
-    # Mixup #
-    ######################
-    "mixup_alpha": 0.2,  # if you don't use mixup, please input 0.
-    "mode": "cos",
-    "max_rate": 1.0,
-    "min_rate": 0.0,
-    ######################
     # Loaders #
     ######################
-    "loader_params": {
-        "train": {"batch_size": BATCH_SIZE, "num_workers": 2},
-        "valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2},
-    },
-    ######################
-    # Split #
-    ######################
-    "split": "StratifiedKFold",
-    "split_params": {"n_splits": 5, "shuffle": True, "random_state": 1213},
+    "loader_params": {"valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2}},
     ######################
     # Model #
     ######################
@@ -105,23 +70,6 @@ config = {
     "pretrained": True,
     "n_target": 397,
     "in_channels": 1,
-    ######################
-    # Criterion #
-    ######################
-    "loss_type": "BCE2WayLoss",
-    "loss_params": {},
-    ######################
-    # Optimizer #
-    ######################
-    "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 2.0e-3, "weight_decay": 1.0e-5},
-    # For SAM optimizer
-    # "base_optimizer": "SGD",
-    ######################
-    # Scheduler #
-    ######################
-    "scheduler_type": "CosineAnnealingLR",
-    "scheduler_params": {"T_max": 15, "eta_min": 5.0e-4},
 }
 
 
@@ -211,8 +159,9 @@ def load_checkpoint(model, checkpoint_path, load_only_params=False, distributed=
 pred_y_clip = np.zeros((len(train_short_audio_df), config["n_target"]))
 pred_y_frame = np.zeros((len(train_short_audio_df), config["n_target"]))
 for fold in range(5):
+    print(f"Fold {fold}")
     valid_idx = train_short_audio_df["fold"] == fold
-    val_df = train_short_audio_df[valid_idx]
+    val_df = train_short_audio_df[valid_idx].reset_index(drop=True)
     label = y[valid_idx]
     model = TimmSED(
         base_model_name=config["base_model_name"],
@@ -255,15 +204,20 @@ for fold in range(5):
     pred_y_clip[valid_idx] = pred_y_clip_fold.copy()
     pred_y_frame[valid_idx] = pred_y_frame_fold.copy()
 np.save(os.path.join(outdir, save_name, "pred_y_clip.npy"), pred_y_clip)
+print("Successfully saved pred_y_clip.npy")
 np.save(os.path.join(outdir, save_name, "pred_y_frame.npy"), pred_y_frame)
+print("Successfully saved pred_y_frame.npy")
 new_y = (y > best_th).astype(np.int64)
 
 nocall_idx = np.zeros(len(new_y)).astype(bool)
 for i, bird in enumerate(target_columns):
-    tmp_idx = (train_short_audio_df["birds"] == bird) | (
+    tmp_idx = (train_short_audio_df["birds"] == bird) & (
         pred_y_frame[:, i] < best_th[i]
     )
     nocall_idx |= tmp_idx
+print(f"N nocall: {nocall_idx.sum()} / {len(nocall_idx)}")
 new_train_short_audio_df = train_short_audio_df.copy()
 new_train_short_audio_df.loc[nocall_idx, "birds"] = "nocall"
 new_train_short_audio_df.to_csv(os.path.join(outdir, save_name, "relabel.csv"))
+print(f"Successfully saved {os.path.join(outdir, save_name, 'relabel.csv')}")
+# %%
