@@ -1,85 +1,47 @@
-import logging
-import argparse
+# %%
 import os
 import sys
-import time
-
+import soundfile as sf
 import numpy as np
 import pandas as pd
-import soundfile as sf
 import torch
 import torch.utils.data as torchdata
-
-from contextlib import contextmanager
-from pathlib import Path
-from typing import Optional
-
 from tqdm import tqdm
-from sklearn import metrics
 
 sys.path.append("../input/modules")
 import datasets  # noqa: E402
 from models import TimmSED  # noqa: E402
 from utils import target_columns  # noqa: E402
-from utils import set_seed  # noqa: E402
-from utils import get_logger  # noqa: E402
-
-sys.path.append("../input/iterative-stratification-master")
-from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
+from utils import best_th  # noqa: E402
 
 BATCH_SIZE = 32
-
-# Config
-parser = argparse.ArgumentParser(
-    description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
-)
-parser.add_argument("--outdir", type=str, required=True, help="name of outdir.")
-parser.add_argument("--save_name", type=str, default="", help="name of save file.")
-parser.add_argument(
-    "--resume",
-    default=[],
-    type=str,
-    nargs="*",
-    help="checkpoint file path to resume training. (default=[])",
-)
-parser.add_argument(
-    "--verbose",
-    default=1,
-    type=int,
-    help="logging level. higher is more logging. (default=1)",
-)
-args = parser.parse_args()
+input_dir = "../input/birdclef-2021"
+split_sec = 20
+outdir = f"dump/relabel{split_sec}sec"
+save_name = "b0_no_aug"
+train_soundscape = pd.read_csv(os.path.join(input_dir, "train_soundscape_labels.csv"))
+train_short_audio_df = pd.read_csv(f"dump/train_short_audio_{split_sec}sec.csv")
+# data
+y = np.zeros((len(train_short_audio_df), 397))
+for i in range(len(train_short_audio_df)):
+    for bird in train_short_audio_df.loc[i, "birds"].split(" "):
+        y[i, np.array(target_columns) == bird] = 1.0
+checkpoint_list = [
+    f"exp/arai_train_tf_efficientnet_b0_ns_mgpu/no_aug/best_score/best_scorefold{fold}bce.pkl"
+    for fold in range(5)
+]
 if not torch.cuda.is_available():
     device = torch.device("cpu")
 else:
     device = torch.device("cuda")
-
-
-@contextmanager
-def timer(name: str, logger: Optional[logging.Logger] = None):
-    t0 = time.time()
-    msg = f"[{name}] start"
-    if logger is None:
-        print(msg)
-    else:
-        logger.info(msg)
-    yield
-
-    msg = f"[{name}] done in {time.time() - t0:.2f} s"
-    if logger is None:
-        print(msg)
-    else:
-        logger.info(msg)
-
 
 config = {
     ######################
     # Globals #
     ######################
     "seed": 1213,
-    "epochs": 20,
+    "epochs": 40,
     "train": True,
-    "folds": [0],
     "img_size": 128,
     "n_frame": 128,
     ######################
@@ -95,7 +57,18 @@ config = {
     ######################
     # Dataset #
     ######################
-    "transforms": {"train": {"Normalize": {}}, "valid": {"Normalize": {}},},
+    "transforms": {
+        "train": {
+            "Normalize": {},
+            "VolumeControl": {
+                "always_apply": False,
+                "p": 0.8,
+                "db_limit": 10,
+                "mode": "uniform",
+            },
+        },
+        "valid": {"Normalize": {}},
+    },
     "period": 20,
     "n_mels": 128,
     "fmin": 20,
@@ -108,14 +81,17 @@ config = {
     ######################
     # Mixup #
     ######################
-    "mixup_alpha": 1,  # if you don't use mixup, please input 0.
-    "mode": "const",
-    "max_rate": 0.8,
+    "mixup_alpha": 0.2,  # if you don't use mixup, please input 0.
+    "mode": "cos",
+    "max_rate": 1.0,
     "min_rate": 0.0,
     ######################
     # Loaders #
     ######################
-    "loader_params": {"valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2}},
+    "loader_params": {
+        "train": {"batch_size": BATCH_SIZE, "num_workers": 2},
+        "valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2},
+    },
     ######################
     # Split #
     ######################
@@ -132,68 +108,21 @@ config = {
     ######################
     # Criterion #
     ######################
-    "loss_type": "BCEFocal2WayLoss",
+    "loss_type": "BCE2WayLoss",
     "loss_params": {},
     ######################
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 2.0e-3},
+    "optimizer_params": {"lr": 2.0e-3, "weight_decay": 1.0e-5},
     # For SAM optimizer
-    "base_optimizer": "Adam",
+    # "base_optimizer": "SGD",
     ######################
     # Scheduler #
     ######################
     "scheduler_type": "CosineAnnealingLR",
-    "scheduler_params": {"T_max": 10},
+    "scheduler_params": {"T_max": 15, "eta_min": 5.0e-4},
 }
-config.update(vars(args))
-save_name = f"{config['save_name']}"
-if not os.path.exists(os.path.join(config["outdir"], save_name)):
-    os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
-set_seed(config["seed"])
-logger = get_logger(os.path.join(config["outdir"], save_name, "infer.log"))
-
-TEST = len(list(Path("../input/birdclef-2021/test_soundscapes/").glob("*.ogg"))) != 0
-if TEST:
-    DATADIR = Path("../input/birdclef-2021/test_soundscapes/")
-else:
-    DATADIR = Path("../input/birdclef-2021/train_soundscapes/")
-
-# set dataset
-train_meta_df = pd.read_csv(config["train_csv"])
-train_soundscape = pd.read_csv(config["train_soundscape"])
-train_meta_df = train_meta_df.rename(columns={"primary_label": "birds"})
-train_meta_df["path"] = (
-    config["train_datadir"]
-    + "/"
-    + train_meta_df["birds"]
-    + "/"
-    + train_meta_df["filename"]
-)
-soundscape = pd.read_csv(f"dump/train_{config['period']}sec.csv")
-soundscape = soundscape[soundscape["birds"] != "nocall"]
-df = pd.concat(
-    [soundscape[["path", "birds"]], train_meta_df[["path", "birds"]]], axis=0
-).reset_index(drop=True)
-splitter = MultilabelStratifiedKFold(**config["split_params"])
-y = np.zeros((len(df), 397))
-for i in range(len(df)):
-    for bird in df.loc[i, "birds"].split(" "):
-        y[i, np.array(target_columns) == bird] = 1.0
-df["dataset"] = "train_soundscape"
-df.loc[
-    ["train_short_audio" in path for path in df["path"].values], "dataset"
-] = "train_short_audio"
-df["fold"] = 0
-for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
-    df.loc[val_idx, "fold"] = i
-df.to_csv(os.path.join(config["outdir"], save_name, "train_y.csv"), index=False)
-# %%
-
-path_list = config["resume"]
-pred_y_clip = np.zeros((len(df), config["n_target"]))
-pred_y_frame = np.zeros((len(df), config["n_target"]))
 
 
 class WaveformDataset(torchdata.Dataset):
@@ -274,28 +203,28 @@ def load_checkpoint(model, checkpoint_path, load_only_params=False, distributed=
         steps = state_dict["steps"]
         epochs = state_dict["epochs"]
         best_score = state_dict.get("best_score", 0)
-        logging.info(f"Steps:{steps}, Epochs:{epochs}, BEST score:{best_score}")
-        # print(f"Steps:{steps}, Epochs:{epochs}, BEST score:{best_score}")
+        # logging.info(f"Steps:{steps}, Epochs:{epochs}, BEST score:{best_score}")
+        print(f"Steps:{steps}, Epochs:{epochs}, BEST score:{best_score}")
     return model.eval()
 
 
-# predict oof
-for i, path in enumerate(path_list):
-    logger.info(f"Start fold {i}")
-    valid_idx = df["fold"] == i
-    val_df = df[valid_idx].reset_index(drop=True)
-    logger.info(f"fold {i}, {valid_idx.sum()}, {val_df.shape}")
+pred_y_clip = np.zeros((len(train_short_audio_df), config["n_target"]))
+pred_y_frame = np.zeros((len(train_short_audio_df), config["n_target"]))
+for fold in range(5):
+    valid_idx = train_short_audio_df["fold"] == fold
+    val_df = train_short_audio_df[valid_idx]
     label = y[valid_idx]
     model = TimmSED(
         base_model_name=config["base_model_name"],
-        pretrained=False,
+        pretrained=config["pretrained"],
         num_classes=config["n_target"],
         in_channels=config["in_channels"],
+        n_mels=config["n_mels"],
     )
     model.training = False
-    model = load_checkpoint(model, path, load_only_params=False, distributed=False).to(
-        device
-    )
+    model = load_checkpoint(
+        model, checkpoint_list[fold], load_only_params=False, distributed=False
+    ).to(device)
     data_loader = torchdata.DataLoader(
         WaveformDataset(
             val_df,
@@ -325,49 +254,16 @@ for i, path in enumerate(path_list):
             )
     pred_y_clip[valid_idx] = pred_y_clip_fold.copy()
     pred_y_frame[valid_idx] = pred_y_frame_fold.copy()
-    clip_f1 = metrics.f1_score(
-        label, pred_y_clip[valid_idx] > 0.1, average="samples", zero_division=0,
+np.save(os.path.join(outdir, save_name, "pred_y_clip.npy"), pred_y_clip)
+np.save(os.path.join(outdir, save_name, "pred_y_frame.npy"), pred_y_frame)
+new_y = (y > best_th).astype(np.int64)
+
+nocall_idx = np.zeros(len(new_y)).astype(bool)
+for i, bird in enumerate(target_columns):
+    tmp_idx = (train_short_audio_df["birds"] == bird) | (
+        pred_y_frame[:, i] < best_th[i]
     )
-    frame_f1 = metrics.f1_score(
-        label, pred_y_frame[valid_idx] > 0.1, average="samples", zero_division=0,
-    )
-    logger.info(f"fold {i} clip f1 0.1:{clip_f1:.4f}, frame f1:{frame_f1:.4f}")
-    logger.info(f"Finish fold {i}")
-    np.save(
-        os.path.join(config["outdir"], save_name, f"pred_y_clip{i}.npy"),
-        pred_y_clip_fold,
-    )
-    np.save(
-        os.path.join(config["outdir"], save_name, f"pred_y_frame{i}.npy"),
-        pred_y_frame_fold,
-    )
-np.save(os.path.join(config["outdir"], save_name, "train_y.npy"), y)
-np.save(os.path.join(config["outdir"], save_name, "pred_y_clip.npy"), pred_y_clip)
-np.save(os.path.join(config["outdir"], save_name, "pred_y_frame.npy"), pred_y_frame)
-# calculate oof f1 score
-best_clip_f1 = 0
-best_frame_f1 = 0
-best_clip_thred = 0.05
-best_frame_thred = 0.05
-for threshold in np.arange(0.05, 0.5, 0.01):
-    clip_f1 = metrics.f1_score(
-        y, pred_y_clip > threshold, average="samples", zero_division=0,
-    )
-    frame_f1 = metrics.f1_score(
-        y, pred_y_frame > threshold, average="samples", zero_division=0,
-    )
-    if clip_f1 > best_clip_f1:
-        best_clip_f1 = clip_f1
-        best_clip_thred = threshold
-    if frame_f1 > best_frame_f1:
-        best_frame_f1 = frame_f1
-        best_frame_thred = threshold
-    logger.info(
-        f"threshold:{threshold:.2f}, clip f1:{clip_f1:.4f}, frame f1:{frame_f1:.4f}"
-    )
-logger.info(
-    f"best clip threshold:{best_clip_thred:.2f}, best_clip_f1:{best_clip_f1:.4f}"
-)
-logger.info(
-    f"best frame threshold:{best_frame_thred:.2f}, best_frame_f1:{best_frame_f1:.4f}"
-)
+    nocall_idx |= tmp_idx
+new_train_short_audio_df = train_short_audio_df.copy()
+new_train_short_audio_df.loc[nocall_idx, "birds"] = "nocall"
+new_train_short_audio_df.to_csv(os.path.join(outdir, save_name, "relabel.csv"))

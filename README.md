@@ -146,6 +146,8 @@ EOF
     - BCEWithLogitsLossで解決
 - lrのminが0になるとvalidで悪影響なので、lrのminは1e-4にする
 - mixupはsin制御が良好
+- リラベル+mixのb0
+- リラベル+mixupのb0のBCE weight
 ### 実験したモデルたち
 - 
 ### 今の課題は何?

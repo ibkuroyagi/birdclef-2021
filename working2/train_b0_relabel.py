@@ -26,9 +26,6 @@ from utils import set_seed  # noqa: E402
 from utils import sigmoid  # noqa: E402
 from utils import mixup_apply_rate  # noqa: E402
 
-sys.path.append("../input/iterative-stratification-master")
-from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
-
 BATCH_SIZE = 32
 
 # ## Config
@@ -158,11 +155,6 @@ config = {
         "valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2},
     },
     ######################
-    # Split #
-    ######################
-    "split": "StratifiedKFold",
-    "split_params": {"n_splits": 5, "shuffle": True, "random_state": 1213},
-    ######################
     # Model #
     ######################
     "base_model_name": "tf_efficientnet_b0_ns",
@@ -179,7 +171,7 @@ config = {
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 2.0e-3},  # "weight_decay": 1.0e-5
+    "optimizer_params": {"lr": 2.0e-3},
     # For SAM optimizer
     # "base_optimizer": "SGD",
     ######################
@@ -193,22 +185,11 @@ config.update(vars(args))
 # this notebook is by default run on debug mode (only train one epoch).
 # If you'd like to get the results on par with that of inference notebook, you'll need to train the model around 30 epochs
 
-train_meta_df = pd.read_csv(config["train_csv"])
-train_soundscape = pd.read_csv(config["train_soundscape"])
-train_meta_df = train_meta_df.rename(columns={"primary_label": "birds"})
-train_meta_df["path"] = (
-    config["train_datadir"]
-    + "/"
-    + train_meta_df["birds"]
-    + "/"
-    + train_meta_df["filename"]
-)
-
-soundscape = pd.read_csv(f"dump/train_{config['period']}sec.csv")
+train_short_audio_df = pd.read_csv(f"dump/train_short_audio_{config['period']}sec.csv")
+train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
+soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
 soundscape = soundscape[soundscape["birds"] != "nocall"]
-df = pd.concat(
-    [soundscape[["path", "birds"]], train_meta_df[["path", "birds"]]], axis=0
-).reset_index(drop=True)
+df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
 ALL_DATA = len(df)
 DEBUG = False
 if DEBUG:
@@ -255,7 +236,7 @@ class WaveformDataset(torchdata.Dataset):
         return len(self.df)
 
     def __getitem__(self, idx: int):
-        path, bird = self.df.iloc[idx]
+        path = self.df.loc[idx, "path"]
         x, sr = sf.read(path)
         len_x = len(x)
         effective_length = sr * self.period
@@ -779,22 +760,20 @@ class SEDTrainer(object):
             self.finish_train = True
 
 
-# validation
-splitter = MultilabelStratifiedKFold(**config["split_params"])
-
 # data
 y = np.zeros((len(df), 397))
 for i in range(len(df)):
     for bird in df.loc[i, "birds"].split(" "):
         y[i, np.array(target_columns) == bird] = 1.0
 # main loop
-for i, (trn_idx, val_idx) in enumerate(splitter.split(df, y=y)):
+for i in range(5):
     if i not in config["folds"]:
         continue
     logging.info("=" * 120)
     logging.info(f"Fold {i} Training")
     logging.info("=" * 120)
-
+    trn_idx = df[df["fold"] != i]
+    val_idx = df[df["fold"] == i]
     trn_df = df.loc[trn_idx, :].reset_index(drop=True)
     val_df = df.loc[val_idx, :].reset_index(drop=True)
     data_loader = {}

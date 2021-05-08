@@ -16,7 +16,7 @@ if [ -e "${PRJ_ROOT}/tools/activate_python.sh" ]; then
 fi
 export PATH="${PATH}:${PRJ_ROOT}/utils"
 # python related
-export OMP_NUM_THREADS=1
+export OMP_NUM_THREADS=2
 export PYTHONIOENCODING=UTF-8
 export MPL_BACKEND=Agg
 export LC_CTYPE=en_US.UTF-8
