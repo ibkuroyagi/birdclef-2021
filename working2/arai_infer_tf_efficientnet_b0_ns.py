@@ -333,23 +333,23 @@ for i, path in enumerate(path_list):
     )
     logger.info(f"fold {i} clip f1 0.1:{clip_f1:.4f}, frame f1:{frame_f1:.4f}")
     logger.info(f"Finish fold {i}")
-    np.save(
-        os.path.join(config["outdir"], save_name, f"pred_y_clip{i}.npy"),
-        pred_y_clip_fold,
-    )
-    np.save(
-        os.path.join(config["outdir"], save_name, f"pred_y_frame{i}.npy"),
-        pred_y_frame_fold,
-    )
+    # np.save(
+    #     os.path.join(config["outdir"], save_name, f"pred_y_clip{i}.npy"),
+    #     pred_y_clip_fold,
+    # )
+    # np.save(
+    #     os.path.join(config["outdir"], save_name, f"pred_y_frame{i}.npy"),
+    #     pred_y_frame_fold,
+    # )
 np.save(os.path.join(config["outdir"], save_name, "train_y.npy"), y)
 np.save(os.path.join(config["outdir"], save_name, "pred_y_clip.npy"), pred_y_clip)
 np.save(os.path.join(config["outdir"], save_name, "pred_y_frame.npy"), pred_y_frame)
 # calculate oof f1 score
 best_clip_f1 = 0
 best_frame_f1 = 0
-best_clip_thred = 0.05
-best_frame_thred = 0.05
-for threshold in np.arange(0.05, 0.5, 0.01):
+best_clip_thred = 0.01
+best_frame_thred = 0.01
+for threshold in np.arange(0.01, 0.5, 0.01):
     clip_f1 = metrics.f1_score(
         y, pred_y_clip > threshold, average="samples", zero_division=0,
     )

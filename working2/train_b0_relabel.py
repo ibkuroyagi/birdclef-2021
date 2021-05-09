@@ -25,6 +25,7 @@ from utils import target_columns  # noqa: E402
 from utils import set_seed  # noqa: E402
 from utils import sigmoid  # noqa: E402
 from utils import mixup_apply_rate  # noqa: E402
+from utils import pos_weight  # noqa: E402
 
 BATCH_SIZE = 32
 
@@ -160,7 +161,7 @@ config = {
     # Criterion #
     ######################
     "loss_type": "BCE2WayLoss",
-    "loss_params": {"pos_weight": None},
+    "loss_params": {"pos_weight": None},  # pos_weight
     ######################
     # Optimizer #
     ######################
@@ -175,23 +176,16 @@ config = {
     "scheduler_params": {"T_max": 15, "eta_min": 5.0e-4},
 }
 config.update(vars(args))
-
-# this notebook is by default run on debug mode (only train one epoch).
-# If you'd like to get the results on par with that of inference notebook, you'll need to train the model around 30 epochs
-
-train_short_audio_df = pd.read_csv("dump/relabel20sec/relabel.csv")
+train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup/relabel.csv")
 train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
 soundscape = soundscape[
-    (soundscape["birds"] != "nocall") | (soundscape["dataset"] == "soundscape")
+    (soundscape["birds"] != "nocall") & (soundscape["dataset"] == "soundscape")
 ]
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
 ALL_DATA = len(df)
-DEBUG = False
-if DEBUG:
-    config["epochs"] = 1
 steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
-config["log_interval_steps"] = steps_per_epoch // 2
+config["log_interval_steps"] = steps_per_epoch // 3
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
 save_name = f"fold{config['folds'][0]}{args.save_name}"
 if not os.path.exists(os.path.join(config["outdir"], save_name)):
@@ -209,8 +203,6 @@ if args.distributed:
     logging.info(f"os.environ:{os.environ}")
     logging.info(f"args.world_size:{args.world_size}")
     logging.info(f"args.distributed:{args.distributed}")
-
-# In this section, I define dataset that crops 20 second chunk. The output of this dataset is a pair of waveform and corresponding label.
 
 
 class WaveformDataset(torchdata.Dataset):
@@ -768,10 +760,10 @@ for i in range(5):
     logging.info("=" * 120)
     logging.info(f"Fold {i} Training")
     logging.info("=" * 120)
-    trn_idx = df[df["fold"] != i]
-    val_idx = df[df["fold"] == i]
-    trn_df = df.loc[trn_idx, :].reset_index(drop=True)
-    val_df = df.loc[val_idx, :].reset_index(drop=True)
+    trn_idx = df["fold"] != i
+    val_idx = df["fold"] == i
+    trn_df = df[trn_idx].reset_index(drop=True)
+    val_df = df[val_idx].reset_index(drop=True)
     data_loader = {}
     for phase, df_, label in zip(
         ["valid", "train"], [val_df, trn_df], [y[val_idx], y[trn_idx]]
@@ -829,9 +821,9 @@ for i in range(5):
         logging.info(model)
     loss_class = getattr(losses, config.get("loss_type", "BCEWithLogitsLoss"),)
     if config["loss_params"].get("pos_weight", None) is not None:
-        pos_weight = config["loss_params"]["pos_weight"]
+        weight = config["loss_params"]["pos_weight"]
         config["loss_params"]["pos_weight"] = torch.tensor(
-            pos_weight, dtype=torch.float
+            weight, dtype=torch.float
         ).to(device)
     criterion = loss_class(**config["loss_params"]).to(device)
     optimizer_class = getattr(optimizers, config["optimizer_type"])

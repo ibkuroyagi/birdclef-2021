@@ -29,7 +29,7 @@ from utils import mixup_apply_rate  # noqa: E402
 sys.path.append("../input/iterative-stratification-master")
 from iterstrat.ml_stratifiers import MultilabelStratifiedKFold  # noqa: E402
 
-BATCH_SIZE = 2
+BATCH_SIZE = 4
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -147,7 +147,7 @@ config = {
     # Mixup #
     ######################
     "mixup_alpha": 0.2,  # if you don't use mixup, please input 0.
-    "mode": "sin",
+    "mode": "cos",
     "max_rate": 1.0,
     "min_rate": 0.0,
     ######################
@@ -179,14 +179,14 @@ config = {
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
-    "optimizer_params": {"lr": 2.0e-3, "weight_decay": 1.0e-5},
+    "optimizer_params": {"lr": 2.0e-3},
     # For SAM optimizer
-    "base_optimizer": "SGD",
+    # "base_optimizer": "SGD",
     ######################
     # Scheduler #
     ######################
     "scheduler_type": "CosineAnnealingLR",
-    "scheduler_params": {"T_max": 10, "eta_min": 1.0e-4},
+    "scheduler_params": {"T_max": 15, "eta_min": 5.0e-4},
 }
 config.update(vars(args))
 

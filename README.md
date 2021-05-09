@@ -109,7 +109,8 @@ EOF
 - baggingでスコアめっちゃあがった
 - 
 ## アイデア
-- 
+- リラベル+mixupのb0
+- リラベル+mixupのb0のBCE weight
 
 ## 決定事項
 - [x] trainにもvalidationにも、short_audioとsoundscapeの両方を用いる
@@ -118,23 +119,25 @@ EOF
 - [x] b0, b7, b5, b3の優先順位でlrの探索をする
     - lrはバッチサイズ64で固定し2epochで10回検証データを計算しloss, f1スコアで比較する
     - lr: 1e-4, 3e-4, 8e-4, 2e-3, 5e-3, 1e-2
-- [ ] data augmentation
+- [x] data augmentation
     - ボリュームを0.8~1.2倍
     - mixup
     - specaug (default)
-    - [ ] fold0のb0, 20epochで比較
+    - [x] fold0のb0, 20epochで比較
         - なにもなし
         - 3つの比較をする
-    - [ ] fold0のb7, 20epochで比較
+    - [x] fold0のb7, 20epochで比較
         - なにもなし
         - 3つの比較をする
-- [ ] 5foldの推論とポストプロセスを実行
-    - oofはpredと答えが欲しいb7-mixup
-    - nocallについては5foldの平均を計算
-    - 推論は20秒ごとに切り取って、logitをnumpyとして保持。その後5秒のdfに変換してnpzに保存。対応するdfを作成。
-    - 系列情報も保持したいので、それも渡す
-    - train_short_audioとtrain_sound_scapeの両方のoofをconcatしたら簡単にvalidに使えるようにして渡す
+- [x] 5foldの推論とポストプロセスを実行
+    - [x] oofはpredと答えが欲しいb0-mixup
+    - [x] nocallについては5foldの平均を計算
+    - [x] 推論は20秒ごとに切り取って、logitをnumpyとして保持。その後5秒のdfに変換してnpzに保存。対応するdfを作成。
+    - [x] train_short_audioとtrain_sound_scapeの両方のoofをconcatしたら簡単にvalidに使えるようにして渡す
 - [ ] short audioに対してpseudo-labelして学習データを厳選してから再度学習
+    - [ ] best_thを用いてリラベルしたtrain_short_audio, soundscapeを用いてb0 mixupを再度5fold学習
+    - [ ] best_thを用いてリラベルしたtrain_short_audio, soundscapeを用いてb0 mixupを再度5fold学習+pos_weight追加
+    - [ ] 5foldのスコアの比較はリラベルする前のデータセットを用いて比較
 - [ ] wavenetはmixupの後
 - [ ] https://github.com/Cadene/pretrained-models.pytorch#senet のse_resnext101_32x4dを変更する
 
@@ -144,10 +147,9 @@ EOF
     - 2epoch時点でのベストの精度比較: b0 > b3 > b5 > b7
 - focal lossの影響ですべて0を出力モデルに途中でなってしまう問題が発生
     - BCEWithLogitsLossで解決
-- lrのminが0になるとvalidで悪影響なので、lrのminは1e-4にする
-- mixupはsin制御が良好
-- リラベル+mixのb0
-- リラベル+mixupのb0のBCE weight
+- lrのminが0になるとvalidで悪影響なので、lrのminは5e-4にする
+- mixupはcos制御が良好
+- weight decay 1e-5入れると学習初期から全く進まなくなる
 ### 実験したモデルたち
 - 
 ### 今の課題は何?

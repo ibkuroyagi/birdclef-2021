@@ -1,4 +1,3 @@
-# %%
 import os
 import sys
 import soundfile as sf
@@ -14,10 +13,11 @@ from models import TimmSED  # noqa: E402
 from utils import target_columns  # noqa: E402
 from utils import best_th  # noqa: E402
 
+
 BATCH_SIZE = 32
 split_sec = 20
 outdir = f"dump/relabel{split_sec}sec"
-save_name = "b0_no_aug"
+save_name = "b0_mixup"
 if not os.path.exists(os.path.join(outdir, save_name)):
     os.makedirs(os.path.join(outdir, save_name), exist_ok=True)
 train_short_audio_df = pd.read_csv(f"dump/train_short_audio_{split_sec}sec.csv")
@@ -27,14 +27,13 @@ for i in range(len(train_short_audio_df)):
     for bird in train_short_audio_df.loc[i, "birds"].split(" "):
         y[i, np.array(target_columns) == bird] = 1.0
 checkpoint_list = [
-    f"exp/arai_train_tf_efficientnet_b0_ns_mgpu/no_aug/best_score/best_scorefold{fold}bce.pkl"
+    f"exp/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/lr2e_3/best_score/best_scorefold{fold}bce_.pkl"
     for fold in range(5)
 ]
 if not torch.cuda.is_available():
     device = torch.device("cpu")
 else:
     device = torch.device("cuda")
-# device = "cpu"
 config = {
     ######################
     # Globals #
@@ -219,4 +218,3 @@ new_train_short_audio_df = train_short_audio_df.copy()
 new_train_short_audio_df.loc[nocall_idx, "birds"] = "nocall"
 new_train_short_audio_df.to_csv(os.path.join(outdir, save_name, "relabel.csv"))
 print(f"Successfully saved {os.path.join(outdir, save_name, 'relabel.csv')}")
-# %%
