@@ -1,4 +1,3 @@
-# %%
 import os
 import sys
 
@@ -44,9 +43,7 @@ for i, bird in enumerate(tqdm(target_columns)):
             new_x[:len_x] = x.copy()
             save_path = os.path.join(outdir_name, ogg_name.split(".")[0] + "_0_20.ogg")
             items["path"] = save_path
-            # sf.write(save_path, new_x, sr)
-            # all_list.append(items)
-            # tmp = pd.DataFrame.from_dict(items)
+            sf.write(save_path, new_x, sr)
             new_df = new_df.append(items, ignore_index=True)
         for j in range(len_x // effective_length):
             start = effective_length * j
@@ -57,10 +54,7 @@ for i, bird in enumerate(tqdm(target_columns)):
                 outdir_name, ogg_name.split(".")[0] + f"_{start_sec}_{end_sec}.ogg",
             )
             new_df = new_df.append(items, ignore_index=True)
-            # print(items["path"], flush=True)
-            # sf.write(items["path"], x[start:end], sr)
-            # all_list.append(items)
+            sf.write(items["path"], x[start:end], sr)
         print(new_df, flush=True)
-# new_df = pd.DataFrame.from_dict(all_list)[train_y_df.columns]
 new_df.to_csv(output_dir + ".csv", index=False)
 print(f"Successfully saved {output_dir}.csv")
