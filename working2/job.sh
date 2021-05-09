@@ -12,7 +12,7 @@ log() {
 . ./cmd.sh || exit 1
 
 stage=0
-stop_stage=0
+stop_stage=1
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail

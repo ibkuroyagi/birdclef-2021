@@ -23,12 +23,14 @@ sr = 32000
 
 effective_length = sr * split_sec
 all_list = []
+new_df = pd.DataFrame(columns=train_y_df.columns)
 for i, bird in enumerate(tqdm(target_columns)):
     indir_name = os.path.join(input_dir, "train_short_audio", bird)
     outdir_name = os.path.join(output_dir, bird)
     if not os.path.isdir(outdir_name):
         os.makedirs(outdir_name)
-    for ogg_name in os.listdir(indir_name):
+
+    for ogg_name in sorted(os.listdir(indir_name)):
         items = {}
         ogg_path = os.path.join(indir_name, ogg_name)
         train_y_df_idx = train_y_df["path"] == ogg_path
@@ -43,18 +45,22 @@ for i, bird in enumerate(tqdm(target_columns)):
             save_path = os.path.join(outdir_name, ogg_name.split(".")[0] + "_0_20.ogg")
             items["path"] = save_path
             # sf.write(save_path, new_x, sr)
-            all_list.append(items)
+            # all_list.append(items)
+            # tmp = pd.DataFrame.from_dict(items)
+            new_df = new_df.append(items, ignore_index=True)
         for j in range(len_x // effective_length):
             start = effective_length * j
             end = effective_length * (j + 1)
+            start_sec = j * split_sec
+            end_sec = (j + 1) * split_sec
             items["path"] = os.path.join(
-                outdir_name,
-                ogg_name.split(".")[0] + f"_{j*split_sec}_{(j+1)*split_sec}.ogg",
+                outdir_name, ogg_name.split(".")[0] + f"_{start_sec}_{end_sec}.ogg",
             )
+            new_df = new_df.append(items, ignore_index=True)
             # print(items["path"], flush=True)
             # sf.write(items["path"], x[start:end], sr)
-            all_list.append(items)
-    print(pd.DataFrame.from_dict(all_list)[train_y_df.columns])
-new_df = pd.DataFrame.from_dict(all_list)[train_y_df.columns]
+            # all_list.append(items)
+        print(new_df, flush=True)
+# new_df = pd.DataFrame.from_dict(all_list)[train_y_df.columns]
 new_df.to_csv(output_dir + ".csv", index=False)
 print(f"Successfully saved {output_dir}.csv")

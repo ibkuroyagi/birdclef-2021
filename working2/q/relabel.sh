@@ -22,7 +22,7 @@ echo '#' Accounting: end_time=$time2 >>relabel.log
 echo '#' Accounting: time=$(($time2-$time1)) threads=1 >>relabel.log
 echo '#' Finished at `date` with status $ret >>relabel.log
 [ $ret -eq 137 ] && exit 100;
-touch ./q/done.18947
+touch ./q/done.19546
 exit $[$ret ? 1 : 0]
 ## submitted with:
 # sbatch --export=PATH --ntasks-per-node=1  -p ubuntu -x huracan,nsx --gres=gpu:1 --cpus-per-task 2 --ntasks-per-node=1  --open-mode=append -e ./q/relabel.log -o ./q/relabel.log  /work2/i_kuroyanagi/kaggle/BridCLEF/working2/./q/relabel.sh >>./q/relabel.log 2>&1

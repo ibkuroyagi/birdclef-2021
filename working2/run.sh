@@ -13,8 +13,8 @@ log() {
 
 # basic setting
 verbose=1               # verbosity level, higher is more logging
-stage=0                 # stage to start
-stop_stage=0            # stage to stop
+stage=1                 # stage to start
+stop_stage=1            # stage to stop
 n_gpus=2                # number of gpus for training
 n_jobs=2                # number of parallel jobs in feature extraction
 speed_facters="0.9 1.1" # The facter of data augmentation.
@@ -60,10 +60,10 @@ fi
 
 if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
     log "Stage 1: Network inference."
-    tag="${infer_file}/no_aug"
+    tag="${infer_file}/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new"
     outdir=${expdir}/${tag}
     for i in {0..4}; do
-        resume+="exp/arai_train_tf_efficientnet_b0_ns_mgpu/no_aug/best_score/best_scorefold${i}bce.pkl "
+        resume+="exp/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/lr2e_3/best_score/best_scorefold${i}bce_.pkl "
     done
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Inference start. See the progress via ${outdir}/${infer_file}${save_name}.log"

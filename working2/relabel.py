@@ -211,10 +211,9 @@ new_y = (y > best_th).astype(np.int64)
 
 nocall_idx = np.zeros(len(new_y)).astype(bool)
 for i, bird in enumerate(target_columns):
-    tmp_idx = (train_short_audio_df["birds"] == bird) & (
+    nocall_idx |= (train_short_audio_df["birds"] == bird) & (
         pred_y_frame[:, i] < best_th[i]
     )
-    nocall_idx |= tmp_idx
 print(f"N nocall: {nocall_idx.sum()} / {len(nocall_idx)}")
 new_train_short_audio_df = train_short_audio_df.copy()
 new_train_short_audio_df.loc[nocall_idx, "birds"] = "nocall"
