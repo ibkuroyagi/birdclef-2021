@@ -29,7 +29,7 @@ resume=""
 train_file="arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new"
 infer_file="arai_infer_tf_efficientnet_b0_ns"
 # train_file="arai_train_tf_efficientnet_b7_ns_mgpu_mixup_new"
-fold=4
+fold=0
 save_name="bce_"
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
@@ -41,7 +41,7 @@ if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Training start. See the progress via ${outdir}/${train_file}${save_name}${fold}.log"
     if [ "${n_gpus}" -gt 1 ]; then
-        train="python ../input/modules/distributed/launch.py --master_port 29507 --nproc_per_node ${n_gpus} ${train_file}.py"
+        train="python ../input/modules/distributed/launch.py --master_port 29500 --nproc_per_node ${n_gpus} ${train_file}.py"
     else
         train="python ${train_file}.py"
     fi

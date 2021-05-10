@@ -102,7 +102,7 @@ config = {
     # Globals #
     ######################
     "seed": 1213,
-    "epochs": 40,
+    "epochs": 30,
     "train": True,
     "folds": [args.fold],
     "img_size": 128,
@@ -176,15 +176,16 @@ config = {
     "scheduler_params": {"T_max": 15, "eta_min": 5.0e-4},
 }
 config.update(vars(args))
-train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup/relabel.csv")
+train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
 train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
 soundscape = soundscape[
     (soundscape["birds"] != "nocall") & (soundscape["dataset"] == "soundscape")
 ]
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
-ALL_DATA = len(df)
-steps_per_epoch = ALL_DATA // (BATCH_SIZE * config["n_gpus"] * config["accum_grads"])
+steps_per_epoch = len(df[df["fold"] != config["folds"][0]]) // (
+    BATCH_SIZE * config["n_gpus"] * config["accum_grads"]
+)
 config["log_interval_steps"] = steps_per_epoch // 3
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
 save_name = f"fold{config['folds'][0]}{args.save_name}"
@@ -854,9 +855,9 @@ for i in range(5):
     )
     # resume from checkpoint
     if len(args.resume) != 0:
-        if args.resume[i] != "no_model":
-            trainer.load_checkpoint(args.resume[i], load_only_params=False)
-            logging.info(f"Successfully resumed from {args.resume[i]}.")
+        if args.resume[0] != "no_model":
+            trainer.load_checkpoint(args.resume[0], load_only_params=False)
+            logging.info(f"Successfully resumed from {args.resume[0]}.")
     # run training loop
     try:
         trainer.run()

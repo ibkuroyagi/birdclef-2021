@@ -17,11 +17,23 @@ from utils import best_th  # noqa: E402
 BATCH_SIZE = 32
 split_sec = 20
 outdir = f"dump/relabel{split_sec}sec"
-save_name = "b0_mixup"
+save_name = "b0_mixup2"
+SKIP_INFER = True
+if SKIP_INFER:
+    pred_y_frame = np.load(os.path.join(outdir, save_name, "pred_y_frame.npy"))
+    print(f"Successfully load pred_y_frame:{pred_y_frame.shape}.")
 if not os.path.exists(os.path.join(outdir, save_name)):
     os.makedirs(os.path.join(outdir, save_name), exist_ok=True)
-train_short_audio_df = pd.read_csv(f"dump/train_short_audio_{split_sec}sec.csv")
+
+n_samples = []
+for bird in target_columns:
+    n_samples.append(
+        len(os.listdir(os.path.join(f"dump/train_short_audio_{split_sec}sec", bird)))
+    )
+n_samples = np.array(n_samples)
+few_birds = np.array(target_columns)[n_samples < 110]
 # data
+train_short_audio_df = pd.read_csv(f"dump/train_short_audio_{split_sec}sec.csv")
 y = np.zeros((len(train_short_audio_df), 397))
 for i in range(len(train_short_audio_df)):
     for bird in train_short_audio_df.loc[i, "birds"].split(" "):
@@ -155,61 +167,63 @@ def load_checkpoint(model, checkpoint_path, load_only_params=False, distributed=
     return model.eval()
 
 
-pred_y_clip = np.zeros((len(train_short_audio_df), config["n_target"]))
-pred_y_frame = np.zeros((len(train_short_audio_df), config["n_target"]))
-for fold in range(5):
-    print(f"Fold {fold}")
-    valid_idx = train_short_audio_df["fold"] == fold
-    val_df = train_short_audio_df[valid_idx].reset_index(drop=True)
-    label = y[valid_idx]
-    model = TimmSED(
-        base_model_name=config["base_model_name"],
-        pretrained=config["pretrained"],
-        num_classes=config["n_target"],
-        in_channels=config["in_channels"],
-        n_mels=config["n_mels"],
-    )
-    model.training = False
-    model = load_checkpoint(
-        model, checkpoint_list[fold], load_only_params=False, distributed=False
-    ).to(device)
-    data_loader = torchdata.DataLoader(
-        WaveformDataset(
-            val_df,
-            label=label,
-            waveform_transforms=get_transforms("valid"),
-            period=config["period"],
-            validation=True,
-        ),
-        shuffle=False,
-        **config["loader_params"]["valid"],
-    )
-    pred_y_clip_fold = np.empty((0, config["n_target"]))
-    pred_y_frame_fold = np.empty((0, config["n_target"]))
-    with torch.no_grad():
-        for batch in tqdm(data_loader):
-            x = batch["X"].to(device)
-            y_ = model(x)
-            pred_y_clip_fold = np.concatenate(
-                [pred_y_clip_fold, torch.sigmoid(y_["logit"]).cpu().numpy()], axis=0
-            )
-            pred_y_frame_fold = np.concatenate(
-                [
-                    pred_y_frame_fold,
-                    torch.sigmoid(y_["framewise_logit"]).cpu().numpy().max(axis=1),
-                ],
-                axis=0,
-            )
-    pred_y_clip[valid_idx] = pred_y_clip_fold.copy()
-    pred_y_frame[valid_idx] = pred_y_frame_fold.copy()
-np.save(os.path.join(outdir, save_name, "pred_y_clip.npy"), pred_y_clip)
-print("Successfully saved pred_y_clip.npy")
-np.save(os.path.join(outdir, save_name, "pred_y_frame.npy"), pred_y_frame)
-print("Successfully saved pred_y_frame.npy")
-new_y = (y > best_th).astype(np.int64)
+if not SKIP_INFER:
+    pred_y_clip = np.zeros((len(train_short_audio_df), config["n_target"]))
+    pred_y_frame = np.zeros((len(train_short_audio_df), config["n_target"]))
+    for fold in range(5):
+        print(f"Fold {fold}")
+        valid_idx = train_short_audio_df["fold"] == fold
+        val_df = train_short_audio_df[valid_idx].reset_index(drop=True)
+        label = y[valid_idx]
+        model = TimmSED(
+            base_model_name=config["base_model_name"],
+            pretrained=config["pretrained"],
+            num_classes=config["n_target"],
+            in_channels=config["in_channels"],
+            n_mels=config["n_mels"],
+        )
+        model.training = False
+        model = load_checkpoint(
+            model, checkpoint_list[fold], load_only_params=False, distributed=False
+        ).to(device)
+        data_loader = torchdata.DataLoader(
+            WaveformDataset(
+                val_df,
+                label=label,
+                waveform_transforms=get_transforms("valid"),
+                period=config["period"],
+                validation=True,
+            ),
+            shuffle=False,
+            **config["loader_params"]["valid"],
+        )
+        pred_y_clip_fold = np.empty((0, config["n_target"]))
+        pred_y_frame_fold = np.empty((0, config["n_target"]))
+        with torch.no_grad():
+            for batch in tqdm(data_loader):
+                x = batch["X"].to(device)
+                y_ = model(x)
+                pred_y_clip_fold = np.concatenate(
+                    [pred_y_clip_fold, torch.sigmoid(y_["logit"]).cpu().numpy()], axis=0
+                )
+                pred_y_frame_fold = np.concatenate(
+                    [
+                        pred_y_frame_fold,
+                        torch.sigmoid(y_["framewise_logit"]).cpu().numpy().max(axis=1),
+                    ],
+                    axis=0,
+                )
+        pred_y_clip[valid_idx] = pred_y_clip_fold.copy()
+        pred_y_frame[valid_idx] = pred_y_frame_fold.copy()
+    np.save(os.path.join(outdir, save_name, "pred_y_clip.npy"), pred_y_clip)
+    print("Successfully saved pred_y_clip.npy")
+    np.save(os.path.join(outdir, save_name, "pred_y_frame.npy"), pred_y_frame)
+    print("Successfully saved pred_y_frame.npy")
 
-nocall_idx = np.zeros(len(new_y)).astype(bool)
+nocall_idx = np.zeros(len(y)).astype(bool)
 for i, bird in enumerate(target_columns):
+    if bird in few_birds:
+        continue
     nocall_idx |= (train_short_audio_df["birds"] == bird) & (
         pred_y_frame[:, i] < best_th[i]
     )
@@ -217,4 +231,4 @@ print(f"N nocall: {nocall_idx.sum()} / {len(nocall_idx)}")
 new_train_short_audio_df = train_short_audio_df.copy()
 new_train_short_audio_df.loc[nocall_idx, "birds"] = "nocall"
 new_train_short_audio_df.to_csv(os.path.join(outdir, save_name, "relabel.csv"))
-print(f"Successfully saved {os.path.join(outdir, save_name, 'relabel.csv')}")
+print(f"Successfully saved at {os.path.join(outdir, save_name, 'relabel.csv')}")
