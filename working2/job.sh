@@ -23,15 +23,17 @@ if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     ${train_cmd} --num_threads 2 "split_train_short.log" \
         python split_train_short.py
 fi
+
 if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
-    echo "Start Stage 1 relabel"
-    # shellcheck disable=SC2086,SC2154
-    ${train_cmd} --num_threads 2 --gpu 1 "relabel.log" \
-        python relabel.py
-fi
-if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
-    echo "Start Stage 2 make best threshold (magic)"
+    echo "Start Stage 1 make best threshold (magic)"
     # shellcheck disable=SC2086,SC2154
     ${train_cmd} --num_threads 2 "make_best_threshold.log" \
         python make_best_threshold.py
+fi
+
+if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
+    echo "Start Stage 2 relabel"
+    # shellcheck disable=SC2086,SC2154
+    ${train_cmd} --num_threads 2 --gpu 1 "relabel.log" \
+        python relabel.py
 fi

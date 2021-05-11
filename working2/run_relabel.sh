@@ -22,8 +22,8 @@ fold=0
 # directory related
 expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
-resume="exp/train_b0_relabel/mixup2/best_score/best_scorefold${fold}bce.pkl"
-# resume=""
+# resume="exp/train_b0_relabel/mixup2/best_score/best_scorefold${fold}bce.pkl"
+resume=""
 # evaluation related
 train_file="train_b0_relabel"
 infer_file="infer_b0_relabel"
@@ -61,7 +61,7 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
     tag="${infer_file}/mixup2"
     outdir=${expdir}/${tag}
     for i in {0..4}; do
-        resume+="exp/train_b0_relabel/mixup/best_score/best_scorefold${i}bce.pkl "
+        resume+="exp/train_b0_relabel/mixup2/best_score/best_scorefold${i}bce.pkl "
     done
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Inference start. See the progress via ${outdir}/${infer_file}${save_name}.log"

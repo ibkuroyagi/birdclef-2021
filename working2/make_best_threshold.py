@@ -2,9 +2,11 @@ import os
 import numpy as np
 from tqdm import tqdm
 
-input_dir = "exp/arai_infer_tf_efficientnet_b0_ns/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/bce_"
+input_dir = "exp/infer_b0_relabel/mixup2/bce"
 p_y = np.load(os.path.join(input_dir, "pred_y_frame.npy"))
-t_y = np.load(os.path.join(input_dir, "train_y.npy"))
+t_y = np.load(
+    "exp/arai_infer_tf_efficientnet_b0_ns/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/bce_/train_y.npy"
+)
 
 
 def lb_f1(y_pred, y_true):
