@@ -13,17 +13,17 @@ log() {
 
 # basic setting
 verbose=1               # verbosity level, higher is more logging
-stage=0                 # stage to start
-stop_stage=0            # stage to stop
+stage=1                 # stage to start
+stop_stage=1            # stage to stop
 n_gpus=2                # number of gpus for training
 n_jobs=2                # number of parallel jobs in feature extraction
 speed_facters="0.9 1.1" # The facter of data augmentation.
-fold=4
+fold=0
 # directory related
 expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
-# resume="exp/train_b0_relabel/mixup2/best_score/best_scorefold${fold}bce.pkl"
-resume=""
+resume="exp/train_b0_relabel/mixup2/best_score/best_scorefold${fold}bce.pkl"
+# resume=""
 # evaluation related
 train_file="train_b0_relabel"
 infer_file="infer_b0_relabel"
@@ -39,7 +39,7 @@ if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Training start. See the progress via ${outdir}/${train_file}${save_name}${fold}.log"
     if [ "${n_gpus}" -gt 1 ]; then
-        train="python ../input/modules/distributed/launch.py --master_port 29501 --nproc_per_node ${n_gpus} ${train_file}.py"
+        train="python ../input/modules/distributed/launch.py --master_port 29502 --nproc_per_node ${n_gpus} ${train_file}.py"
     else
         train="python ${train_file}.py"
     fi
