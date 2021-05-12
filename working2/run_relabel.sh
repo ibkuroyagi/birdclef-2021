@@ -13,9 +13,9 @@ log() {
 
 # basic setting
 verbose=1               # verbosity level, higher is more logging
-stage=1                 # stage to start
-stop_stage=1            # stage to stop
-n_gpus=2                # number of gpus for training
+stage=0                 # stage to start
+stop_stage=0            # stage to stop
+n_gpus=1                # number of gpus for training
 n_jobs=2                # number of parallel jobs in feature extraction
 speed_facters="0.9 1.1" # The facter of data augmentation.
 fold=0
@@ -34,12 +34,12 @@ set -euo pipefail
 
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 0: Re-labeled Network training."
-    tag="${train_file}/mixup2"
+    tag="${train_file}/mixup_pos_weight"
     outdir=${expdir}/${tag}
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Training start. See the progress via ${outdir}/${train_file}${save_name}${fold}.log"
     if [ "${n_gpus}" -gt 1 ]; then
-        train="python ../input/modules/distributed/launch.py --master_port 29502 --nproc_per_node ${n_gpus} ${train_file}.py"
+        train="python ../input/modules/distributed/launch.py --master_port 29500 --nproc_per_node ${n_gpus} ${train_file}.py"
     else
         train="python ${train_file}.py"
     fi

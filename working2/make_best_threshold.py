@@ -1,12 +1,28 @@
 import os
+import sys
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
+
+sys.path.append("../input/modules")
+from utils import target_columns  # noqa: E402
 
 input_dir = "exp/infer_b0_relabel/mixup2/bce"
 p_y = np.load(os.path.join(input_dir, "pred_y_frame.npy"))
-t_y = np.load(
-    "exp/arai_infer_tf_efficientnet_b0_ns/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/bce_/train_y.npy"
-)
+# t_y = np.load(
+#     "exp/arai_infer_tf_efficientnet_b0_ns/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/bce_/train_y.npy"
+# )
+train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
+train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
+soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
+soundscape = soundscape[
+    (soundscape["birds"] != "nocall") & (soundscape["dataset"] == "soundscape")
+]
+df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
+t_y = np.zeros((len(df), 397))
+for i in range(len(df)):
+    for bird in df.loc[i, "birds"].split(" "):
+        t_y[i, np.array(target_columns) == bird] = 1.0
 
 
 def lb_f1(y_pred, y_true):

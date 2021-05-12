@@ -27,7 +27,7 @@ from utils import sigmoid  # noqa: E402
 from utils import mixup_apply_rate  # noqa: E402
 from utils import pos_weight  # noqa: E402
 
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -161,14 +161,13 @@ config = {
     # Criterion #
     ######################
     "loss_type": "BCE2WayLoss",
-    "loss_params": {"pos_weight": None},  # pos_weight
+    # "loss_params": {"pos_weight": None},  # pos_weight
+    "loss_params": {"pos_weight": pos_weight},
     ######################
     # Optimizer #
     ######################
     "optimizer_type": "Adam",
     "optimizer_params": {"lr": 2.0e-3},
-    # For SAM optimizer
-    # "base_optimizer": "SGD",
     ######################
     # Scheduler #
     ######################

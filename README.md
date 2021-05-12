@@ -135,10 +135,12 @@ EOF
     - [x] 推論は20秒ごとに切り取って、logitをnumpyとして保持。その後5秒のdfに変換してnpzに保存。対応するdfを作成。
     - [x] train_short_audioとtrain_sound_scapeの両方のoofをconcatしたら簡単にvalidに使えるようにして渡す
 - [ ] short audioに対してpseudo-labelして学習データを厳選してから再度学習
-    - [ ] best_thを用いてリラベルしたtrain_short_audio, soundscapeを用いてb0 mixupを再度5fold学習
+    - [x] best_thを用いてリラベルしたtrain_short_audio, soundscapeを用いてb0 mixupを再度5fold学習
     - [ ] best_thを用いてリラベルしたtrain_short_audio, soundscapeを用いてb0 mixupを再度5fold学習+pos_weight追加
-    - [ ] 5foldのスコアの比較はリラベルする前のデータセットを用いて比較
+    - [x] 5foldのスコアの比較はリラベルする後のデータセットを用いてmagic
+    - [ ] submit x2
 - [ ] wavenetはmixupの後
+- [ ] resnet系列
 - [ ] https://github.com/Cadene/pretrained-models.pytorch#senet のse_resnext101_32x4dを変更する
 
 ### 実験結果からの気づき
