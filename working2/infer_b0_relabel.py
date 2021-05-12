@@ -123,11 +123,20 @@ else:
 #     "exp/arai_infer_tf_efficientnet_b0_ns/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/bce_/train_y.csv"
 # )
 train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
-train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
-soundscape = soundscape[
-    (soundscape["birds"] != "nocall") & (soundscape["dataset"] == "soundscape")
-]
+
+use_nocall = True
+if use_nocall:
+    soundscape = soundscape[soundscape["dataset"] == "train_soundscape"]
+else:
+    train_short_audio_df = train_short_audio_df[
+        train_short_audio_df["birds"] != "nocall"
+    ]
+    soundscape = soundscape[
+        (soundscape["birds"] != "nocall")
+        & (soundscape["dataset"] == "train_soundscape")
+    ]
+
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
 df.to_csv(os.path.join(config["outdir"], save_name, "train_y.csv"), index=False)
 y = np.zeros((len(df), 397))

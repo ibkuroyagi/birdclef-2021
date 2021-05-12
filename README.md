@@ -137,7 +137,7 @@ EOF
 - [ ] short audioに対してpseudo-labelして学習データを厳選してから再度学習
     - [x] best_thを用いてリラベルしたtrain_short_audio, soundscapeを用いてb0 mixupを再度5fold学習
     - [ ] best_thを用いてリラベルしたtrain_short_audio, soundscapeを用いてb0 mixupを再度5fold学習+pos_weight追加
-    - [x] 5foldのスコアの比較はリラベルする後のデータセットを用いてmagic
+    - [x] 5foldのスコアの比較はリラベルする後のデータセットを用いてmagic (before: 0.866, after 0.876)
     - [ ] submit x2
 - [ ] wavenetはmixupの後
 - [ ] resnet系列
@@ -152,6 +152,7 @@ EOF
 - lrのminが0になるとvalidで悪影響なので、lrのminは5e-4にする
 - mixupはcos制御が良好
 - weight decay 1e-5入れると学習初期から全く進まなくなる
+
 ### 実験したモデルたち
 - 
 ### 今の課題は何?

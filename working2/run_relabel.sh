@@ -13,8 +13,8 @@ log() {
 
 # basic setting
 verbose=1               # verbosity level, higher is more logging
-stage=0                 # stage to start
-stop_stage=0            # stage to stop
+stage=1                 # stage to start
+stop_stage=1            # stage to stop
 n_gpus=1                # number of gpus for training
 n_jobs=2                # number of parallel jobs in feature extraction
 speed_facters="0.9 1.1" # The facter of data augmentation.

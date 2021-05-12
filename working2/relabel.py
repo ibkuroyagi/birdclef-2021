@@ -230,5 +230,7 @@ for i, bird in enumerate(target_columns):
 print(f"N nocall: {nocall_idx.sum()} / {len(nocall_idx)}")
 new_train_short_audio_df = train_short_audio_df.copy()
 new_train_short_audio_df.loc[nocall_idx, "birds"] = "nocall"
-new_train_short_audio_df.to_csv(os.path.join(outdir, save_name, "relabel.csv"))
+new_train_short_audio_df.to_csv(
+    os.path.join(outdir, save_name, "relabel.csv"), index=False
+)
 print(f"Successfully saved at {os.path.join(outdir, save_name, 'relabel.csv')}")
