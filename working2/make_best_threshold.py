@@ -15,10 +15,13 @@ p_y = np.load(os.path.join(input_dir, "pred_y_frame.npy"))
 # )
 target_columns.append("nocall")
 df = pd.read_csv("exp/infer_b0_relabel/mixup2/bce/train_y.csv")
+soundscape_idx = df["dataset"] == "train_soundscape"
 t_y = np.zeros((len(df), len(target_columns)))
 for i in range(len(df)):
     for bird in df.loc[i, "birds"].split(" "):
         t_y[i, np.array(target_columns) == bird] = 1.0
+t_y = t_y[soundscape_idx]
+p_y = p_y[soundscape_idx]
 
 
 def lb_f1(y_pred, y_true):
@@ -54,8 +57,8 @@ for i in tqdm(range(397)):
             best_t = t
     best_thresholds[i] *= 0
     best_thresholds[i] += best_t
-    save_path = os.path.join(input_dir, "best_thresholds.npy")
-    np.save(save_path, best_thresholds)
+    # save_path = os.path.join(input_dir, "best_thresholds.npy")
+    # np.save(save_path, best_thresholds)
 save_path = os.path.join(input_dir, "best_thresholds.npy")
 np.save(save_path, best_thresholds)
 bin_pred = np.zeros_like(t_y)
@@ -63,3 +66,5 @@ bin_pred[:, :-1] = p_y > best_thresholds
 bin_pred[:, -1] = ~(p_y > best_thresholds).any(axis=1)
 print("aftermagic", lb_f1(bin_pred.astype(int), t_y))
 print(f"Saved magiced file at {save_path}.")
+
+# %%

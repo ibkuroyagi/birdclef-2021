@@ -27,7 +27,7 @@ from utils import sigmoid  # noqa: E402
 from utils import mixup_apply_rate  # noqa: E402
 from utils import pos_weight  # noqa: E402
 
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -179,7 +179,7 @@ train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
 train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
 soundscape = soundscape[
-    (soundscape["birds"] != "nocall") & (soundscape["dataset"] == "soundscape")
+    (soundscape["birds"] != "nocall") & (soundscape["dataset"] == "train_soundscape")
 ]
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
 steps_per_epoch = len(df[df["fold"] != config["folds"][0]]) // (
@@ -284,6 +284,7 @@ class SEDTrainer(object):
         device=torch.device("cpu"),
         train=False,
         save_name="",
+        valid_soundscape_idx=None,
     ):
         """Initialize trainer.
 
@@ -316,6 +317,7 @@ class SEDTrainer(object):
                 os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
             self.writer = SummaryWriter(os.path.join(config["outdir"], save_name))
         self.save_name = save_name
+        self.valid_soundscape_idx = valid_soundscape_idx
 
         self.finish_train = False
         self.best_score = 0
@@ -663,6 +665,20 @@ class SEDTrainer(object):
                 average="samples",
                 zero_division=0,
             )
+            if self.valid_soundscape_idx is not None:
+                self.epoch_valid_loss[
+                    "valid/soundscape_f1_01_frame"
+                ] = metrics.f1_score(
+                    self.valid_y_epoch[self.valid_soundscape_idx] > 0,
+                    sigmoid(
+                        self.valid_pred_logitframe_epoch[self.valid_soundscape_idx].max(
+                            axis=1
+                        )
+                    )
+                    > 0.1,
+                    average="samples",
+                    zero_division=0,
+                )
         except ValueError:
             logging.warning("Raise ValueError: May be contain NaN in y_pred.")
             pass
@@ -764,6 +780,7 @@ for i in range(5):
     val_idx = df["fold"] == i
     trn_df = df[trn_idx].reset_index(drop=True)
     val_df = df[val_idx].reset_index(drop=True)
+    valid_soundscape_idx = val_df["dataset"] == "train_soundscape"
     data_loader = {}
     for phase, df_, label in zip(
         ["valid", "train"], [val_df, trn_df], [y[val_idx], y[trn_idx]]
@@ -851,6 +868,7 @@ for i in range(5):
         device=device,
         train=True,
         save_name=save_name,
+        valid_soundscape_idx=None,
     )
     # resume from checkpoint
     if len(args.resume) != 0:

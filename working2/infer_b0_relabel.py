@@ -1,3 +1,4 @@
+# %%
 import logging
 import argparse
 import os
@@ -25,7 +26,7 @@ from utils import set_seed  # noqa: E402
 from utils import get_logger  # noqa: E402
 
 BATCH_SIZE = 32
-
+# %%
 # Config
 parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
@@ -123,19 +124,14 @@ else:
 #     "exp/arai_infer_tf_efficientnet_b0_ns/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/bce_/train_y.csv"
 # )
 train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
-soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
+soundscape = pd.read_csv("dump/train_20sec_with_nocall.csv")
 
 use_nocall = True
-if use_nocall:
-    soundscape = soundscape[soundscape["dataset"] == "train_soundscape"]
-else:
+if not use_nocall:
     train_short_audio_df = train_short_audio_df[
         train_short_audio_df["birds"] != "nocall"
     ]
-    soundscape = soundscape[
-        (soundscape["birds"] != "nocall")
-        & (soundscape["dataset"] == "train_soundscape")
-    ]
+    soundscape = soundscape[soundscape["birds"] != "nocall"]
 
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
 df.to_csv(os.path.join(config["outdir"], save_name, "train_y.csv"), index=False)
@@ -316,3 +312,27 @@ logger.info(
 logger.info(
     f"best frame threshold:{best_frame_thred:.2f}, best_frame_f1:{best_frame_f1:.4f}"
 )
+
+# %%
+# base = pd.read_csv("dump/train_20sec.csv")
+# soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
+# soundscape = soundscape[
+#     (soundscape["birds"] != "nocall") & (soundscape["dataset"] == "train_soundscape")
+# ]
+
+# %%
+# a = pd.read_csv(
+#     "exp/arai_infer_tf_efficientnet_b0_ns/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/bce_/train_y.csv"
+# )
+# new_soundscape = base[["path", "birds"]]
+# new_soundscape["dataset"] = "train_soundscape"
+# new_soundscape = pd.merge(new_soundscape, a[["path", "fold"]], on="path", how="left")
+# l = sum(new_soundscape["birds"] == "nocall") // 5
+# idx = np.where(new_soundscape["birds"] == "nocall")[0]
+# new_soundscape.loc[idx[:l], "fold"] = 0
+# new_soundscape.loc[idx[l : 2 * l], "fold"] = 1
+# new_soundscape.loc[idx[2 * l : 3 * l], "fold"] = 2
+# new_soundscape.loc[idx[3 * l : 4 * l], "fold"] = 3
+# new_soundscape.loc[idx[4 * l :], "fold"] = 4
+# new_soundscape.to_csv("dump/train_20sec_with_nocall.csv", index=False)
+# %%
