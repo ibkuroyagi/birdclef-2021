@@ -1,5 +1,5 @@
 from .cnn import *  # NOQA
-from .resnext import *  # NOQA
+from .se_resnet50 import *  # NOQA
 from .utils import *  # NOQA
 from .transformer import *  # NOQA
 from .timm_sed import *  # NOQA
