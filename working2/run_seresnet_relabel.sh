@@ -17,12 +17,12 @@ stage=0      # stage to start
 stop_stage=0 # stage to stop
 n_gpus=1     # number of gpus for training
 n_jobs=2     # number of parallel jobs in feature extraction
-fold=0
+fold=4
 # directory related
 expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
-# resume="exp/train_seresnet50_relabel/mixup/best_score/best_scorefold${fold}bce.pkl"
-resume=""
+resume="exp/train_seresnet50_relabel/mixup/best_score/best_scorefold${fold}bce.pkl"
+# resume=""
 # evaluation related
 train_file="train_seresnet50_relabel"
 infer_file="infer_seresnet50_relabel"

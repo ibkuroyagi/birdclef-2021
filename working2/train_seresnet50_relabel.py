@@ -147,8 +147,8 @@ config = {
     # Loaders #
     ######################
     "loader_params": {
-        "train": {"batch_size": BATCH_SIZE, "num_workers": 2},
-        "valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2},
+        "train": {"batch_size": BATCH_SIZE, "num_workers": 4},
+        "valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 4},
     },
     ######################
     # Model #
@@ -161,7 +161,7 @@ config = {
     # Criterion #
     ######################
     "loss_type": "BCE2WayLoss",
-    "loss_params": {"pos_weight": None},  # pos_weight
+    "loss_params": {"pos_weight": None},
     # "loss_params": {"pos_weight": pos_weight},
     ######################
     # Optimizer #
@@ -191,7 +191,7 @@ else:
 
 
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
-steps_per_epoch = len(df[df["fold"] != config["folds"][0]]) // (
+steps_per_epoch = sum(df[df["fold"] != config["folds"][0]]) // (
     BATCH_SIZE * config["n_gpus"] * config["accum_grads"]
 )
 config["log_interval_steps"] = steps_per_epoch // 3
@@ -449,13 +449,6 @@ class SEDTrainer(object):
             loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
         if not torch.isnan(loss):
             self.forward_count += 1
-            # if (self.config["accum_grads"] > self.forward_count) and self.config[
-            #     "distributed"
-            # ]:
-            #     with self.model.no_sync():
-            #         loss = loss / self.config["accum_grads"]
-            #         loss.backward()
-            # else:
             loss = loss / self.config["accum_grads"]
             loss.backward()
 
@@ -756,7 +749,7 @@ class SEDTrainer(object):
             logging.info(f"Successfully saved checkpoint @ {self.steps} steps.")
 
     def _check_log_interval(self):
-        if self.steps % self.config["log_interval_steps"] == 0:
+        if (self.steps % self.config["log_interval_steps"] == 0) and (self.steps != 0):
             self._valid_epoch()
             for key in self.total_train_loss.keys():
                 self.total_train_loss[key] /= self.config["log_interval_steps"]
@@ -839,9 +832,6 @@ for i in range(5):
             )
         # NOTE(ibkuroyagi): Needed to place the model on GPU
         model = DistributedDataParallel(model.to(device))
-        # model = torch.nn.parallel.DistributedDataParallel(
-        #     model.to(device), device_ids=[args.rank], output_device=args.rank,
-        # )
     if i == 0:
         logging.info(model)
     loss_class = getattr(losses, config.get("loss_type", "BCEWithLogitsLoss"),)
