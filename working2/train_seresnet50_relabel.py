@@ -28,7 +28,7 @@ from utils import mixup_apply_rate  # noqa: E402
 
 # from utils import pos_weight  # noqa: E402
 
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -135,7 +135,7 @@ config = {
     "hop_length": 512,
     "sample_rate": 32000,
     "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
-    "accum_grads": 4,
+    "accum_grads": 2,
     ######################
     # Mixup #
     ######################
@@ -162,7 +162,8 @@ config = {
     ######################
     "loss_type": "BCE2WayLoss",
     "loss_params": {"pos_weight": None},
-    # "loss_params": {"pos_weight": pos_weight},
+    # "loss_type": "BCEMasked",
+    # "loss_params": {},
     ######################
     # Optimizer #
     ######################
@@ -177,7 +178,7 @@ config = {
 config.update(vars(args))
 train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
 soundscape = pd.read_csv("dump/train_20sec_with_nocall.csv")
-use_nocall = True
+use_nocall = False
 if use_nocall:
     soundscape = soundscape[soundscape["dataset"] == "train_soundscape"]
 else:
@@ -191,11 +192,13 @@ else:
 
 
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
-steps_per_epoch = sum(df[df["fold"] != config["folds"][0]]) // (
+
+steps_per_epoch = len(df[df["fold"] != config["folds"][0]]) // (
     BATCH_SIZE * config["n_gpus"] * config["accum_grads"]
 )
-config["log_interval_steps"] = steps_per_epoch // 3
+config["log_interval_steps"] = steps_per_epoch // 2
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
+config["steps_per_epoch"] = steps_per_epoch
 save_name = f"fold{config['folds'][0]}{args.save_name}"
 if not os.path.exists(os.path.join(config["outdir"], save_name)):
     os.makedirs(os.path.join(config["outdir"], save_name), exist_ok=True)
@@ -205,6 +208,8 @@ with open(os.path.join(args.outdir, save_name, "config.yml"), "w") as f:
 for key, value in config.items():
     logging.info(f"{key} = {value}")
 set_seed(config["seed"])
+if config["folds"][0] == 0:
+    df.to_csv(os.path.join(config["outdir"], save_name, "train_y.csv"), index=False)
 # check distributed training
 if args.distributed:
     logging.info(f"device:{device}")
@@ -443,8 +448,9 @@ class SEDTrainer(object):
         if self.config["loss_type"] in [
             "BCEWithLogitsLoss",
             "BCEFocalLoss",
+            "BCEMasked",
         ]:
-            loss = self.criterion(y_["clipwise_output"], y_clip)
+            loss = self.criterion(y_["logit"], y_clip)
         elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
             loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
         if not torch.isnan(loss):
@@ -617,15 +623,16 @@ class SEDTrainer(object):
             self._valid_step(batch)
         try:
             logging.debug(
-                f"Epoch valid pred_clip:{self.valid_pred_epoch.sum()}\n"
+                f"Epoch valid pred_clip:{self.train_pred_logit_epoch.sum()}\n"
                 f"Epoch valid    y_clip:{self.valid_y_epoch.sum()}\n"
             )
             if self.config["loss_type"] in [
                 "BCEWithLogitsLoss",
                 "BCEFocalLoss",
+                "BCEMasked",
             ]:
                 self.epoch_valid_loss["valid/epoch_main_loss"] = self.criterion(
-                    torch.tensor(self.valid_pred_epoch).to(self.device),
+                    torch.tensor(self.valid_pred_logit_epoch).to(self.device),
                     torch.tensor(self.valid_y_epoch).to(self.device),
                 ).item()
             elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
@@ -667,20 +674,6 @@ class SEDTrainer(object):
                 average="samples",
                 zero_division=0,
             )
-            if self.valid_soundscape_idx is not None:
-                self.epoch_valid_loss[
-                    "valid/soundscape_f1_01_frame"
-                ] = metrics.f1_score(
-                    self.valid_y_epoch[self.valid_soundscape_idx] > 0,
-                    sigmoid(
-                        self.valid_pred_logitframe_epoch[self.valid_soundscape_idx].max(
-                            axis=1
-                        )
-                    )
-                    > 0.1,
-                    average="samples",
-                    zero_division=0,
-                )
         except ValueError:
             logging.warning("Raise ValueError: May be contain NaN in y_pred.")
             pass

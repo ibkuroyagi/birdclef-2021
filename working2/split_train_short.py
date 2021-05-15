@@ -12,7 +12,7 @@ from utils import target_columns  # noqa: E402
 
 BATCH_SIZE = 32
 input_dir = "../input/birdclef-2021"
-split_sec = 20
+split_sec = 5
 output_dir = f"dump/train_short_audio_{split_sec}sec"
 train_soundscape = pd.read_csv(os.path.join(input_dir, "train_soundscape_labels.csv"))
 train_y_df = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
@@ -41,7 +41,9 @@ for i, bird in enumerate(tqdm(target_columns)):
         if len_x <= effective_length:
             new_x = np.zeros(effective_length)
             new_x[:len_x] = x.copy()
-            save_path = os.path.join(outdir_name, ogg_name.split(".")[0] + "_0_20.ogg")
+            save_path = os.path.join(
+                outdir_name, ogg_name.split(".")[0] + f"_0_{split_sec}.ogg"
+            )
             items["path"] = save_path
             sf.write(save_path, new_x, sr)
             new_df = new_df.append(items, ignore_index=True)

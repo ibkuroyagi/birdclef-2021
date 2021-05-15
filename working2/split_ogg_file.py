@@ -5,7 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 
 input_dir = "../input/birdclef-2021"
-split_sec = 10
+split_sec = 5
 output_dir = f"dump/train_{split_sec}sec"
 train_soundscape = pd.read_csv(os.path.join(input_dir, "train_soundscape_labels.csv"))
 # 1. 何秒で切り出すか指定

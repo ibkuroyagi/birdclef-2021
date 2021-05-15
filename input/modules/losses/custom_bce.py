@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class BCE2WayLoss(nn.Module):
@@ -18,16 +19,10 @@ class BCE2WayLoss(nn.Module):
 
 
 class BCEMasked(nn.Module):
-    def __init__(self, pos_weight=None):
+    def __init__(self):
         super().__init__()
-        self.binary_cross_entropy_with_logits = nn.BCEWithLogitsLoss(
-            reduction="mean", pos_weight=pos_weight
-        )
 
-    def forward(self, inputs, targets, mask=None):
-        bce_loss = self.binary_cross_entropy_with_logits(
-            inputs, targets, reduction="none"
-        )
-        if mask is not None:
-            bce_loss = bce_loss[mask > 0]
+    def forward(self, inputs, targets):
+        bce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+        bce_loss = bce_loss[targets > 0]
         return bce_loss.mean()
