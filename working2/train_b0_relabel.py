@@ -134,7 +134,7 @@ config = {
     "hop_length": 512,
     "sample_rate": 32000,
     "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
-    "accum_grads": 2,
+    "accum_grads": 1,
     ######################
     # Mixup #
     ######################
@@ -146,8 +146,8 @@ config = {
     # Loaders #
     ######################
     "loader_params": {
-        "train": {"batch_size": BATCH_SIZE, "num_workers": 2},
-        "valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2},
+        "train": {"batch_size": BATCH_SIZE, "num_workers": 4},
+        "valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 4},
     },
     ######################
     # Model #

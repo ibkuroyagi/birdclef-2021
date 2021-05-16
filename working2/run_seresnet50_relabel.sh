@@ -15,9 +15,9 @@ log() {
 verbose=1    # verbosity level, higher is more logging
 stage=0      # stage to start
 stop_stage=0 # stage to stop
-n_gpus=2     # number of gpus for training
+n_gpus=1     # number of gpus for training
 n_jobs=2     # number of parallel jobs in feature extraction
-fold=0
+fold=4
 # directory related
 expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
@@ -33,7 +33,7 @@ set -euo pipefail
 
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 0: Re-labeled Network training."
-    tag="${train_file}/wo_nocall"
+    tag="${train_file}/w_nocall"
     outdir=${expdir}/${tag}
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Training start. See the progress via ${outdir}/${train_file}${save_name}${fold}.log"

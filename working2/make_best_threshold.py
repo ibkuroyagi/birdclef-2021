@@ -8,13 +8,13 @@ from tqdm import tqdm
 sys.path.append("../input/modules")
 from utils import target_columns  # noqa: E402
 
-input_dir = "exp/infer_b0_relabel/mixup2/bce"
+input_dir = "exp/infer_b0_relabel/mixup3/bce"
 p_y = np.load(os.path.join(input_dir, "pred_y_frame.npy"))
 # t_y = np.load(
 #     "exp/arai_infer_tf_efficientnet_b0_ns/arai_train_tf_efficientnet_b0_ns_mgpu_mixup_new/bce_/train_y.npy"
 # )
 target_columns.append("nocall")
-df = pd.read_csv("exp/infer_b0_relabel/mixup2/bce/train_y.csv")
+df = pd.read_csv("exp/infer_b0_relabel/mixup3/bce/train_y.csv")
 soundscape_idx = df["dataset"] == "train_soundscape"
 t_y = np.zeros((len(df), len(target_columns)))
 for i in range(len(df)):
