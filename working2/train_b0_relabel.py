@@ -27,7 +27,7 @@ from utils import sigmoid  # noqa: E402
 from utils import mixup_apply_rate  # noqa: E402
 from utils import pos_weight  # noqa: E402
 
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -134,7 +134,7 @@ config = {
     "hop_length": 512,
     "sample_rate": 32000,
     "melspectrogram_parameters": {"n_mels": 128, "fmin": 20, "fmax": 16000},
-    "accum_grads": 1,
+    "accum_grads": 2,
     ######################
     # Mixup #
     ######################
@@ -161,8 +161,9 @@ config = {
     # Criterion #
     ######################
     "loss_type": "BCE2WayLoss",
-    # "loss_params": {"pos_weight": None},  # pos_weight
     "loss_params": {"pos_weight": pos_weight},
+    # "loss_type": "BCEMasked",
+    # "loss_params": {},
     ######################
     # Optimizer #
     ######################
@@ -176,15 +177,23 @@ config = {
 }
 config.update(vars(args))
 train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
-train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
-soundscape = soundscape[
-    (soundscape["birds"] != "nocall") & (soundscape["dataset"] == "train_soundscape")
-]
+use_nocall = False
+if use_nocall:
+    soundscape = soundscape[soundscape["dataset"] == "train_soundscape"]
+else:
+    soundscape = soundscape[
+        (soundscape["birds"] != "nocall")
+        & (soundscape["dataset"] == "train_soundscape")
+    ]
+    train_short_audio_df = train_short_audio_df[
+        train_short_audio_df["birds"] != "nocall"
+    ]
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
 steps_per_epoch = len(df[df["fold"] != config["folds"][0]]) // (
     BATCH_SIZE * config["n_gpus"] * config["accum_grads"]
 )
+config["steps_per_epoch"] = steps_per_epoch
 config["log_interval_steps"] = steps_per_epoch // 3
 config["train_max_steps"] = config["epochs"] * steps_per_epoch
 save_name = f"fold{config['folds'][0]}{args.save_name}"
@@ -196,6 +205,8 @@ with open(os.path.join(args.outdir, save_name, "config.yml"), "w") as f:
 for key, value in config.items():
     logging.info(f"{key} = {value}")
 set_seed(config["seed"])
+if config["folds"][0] == 0:
+    df.to_csv(os.path.join(config["outdir"], save_name, "train_y.csv"), index=False)
 # check distributed training
 if args.distributed:
     logging.info(f"device:{device}")
@@ -405,6 +416,9 @@ class SEDTrainer(object):
             logging.info(
                 f"Steps:{self.steps}, Epochs:{self.epochs}, BEST score:{self.best_score}"
             )
+            self.steps = 0
+            self.epochs = 0
+            self.best_score = 0
             if (self.optimizer is not None) and (
                 state_dict.get("optimizer", None) is not None
             ):
@@ -434,26 +448,20 @@ class SEDTrainer(object):
         if self.config["loss_type"] in [
             "BCEWithLogitsLoss",
             "BCEFocalLoss",
+            "BCEMasked",
         ]:
-            loss = self.criterion(y_["clipwise_output"], y_clip)
+            loss = self.criterion(y_["logit"], y_clip)
         elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
             loss = self.criterion(y_["logit"], y_["framewise_logit"], y_clip)
         if not torch.isnan(loss):
             self.forward_count += 1
-            # if (self.config["accum_grads"] > self.forward_count) and self.config[
-            #     "distributed"
-            # ]:
-            #     with self.model.no_sync():
-            #         loss = loss / self.config["accum_grads"]
-            #         loss.backward()
-            # else:
             loss = loss / self.config["accum_grads"]
             loss.backward()
 
             if self.forward_count == self.config["accum_grads"]:
                 self.total_train_loss["train/loss"] += loss.item()
                 logging.debug(
-                    f'{y_clip.cpu().numpy()},{y_["clipwise_output"].detach().cpu().numpy() > 0.5}'
+                    f'{y_clip.cpu().numpy()},{y_["logit"].detach().cpu().numpy() > 0.5}'
                 )
                 self.total_train_loss["train/f1_01"] += metrics.f1_score(
                     y_clip.cpu().numpy() > 0,
@@ -621,9 +629,10 @@ class SEDTrainer(object):
             if self.config["loss_type"] in [
                 "BCEWithLogitsLoss",
                 "BCEFocalLoss",
+                "BCEMasked",
             ]:
                 self.epoch_valid_loss["valid/epoch_main_loss"] = self.criterion(
-                    torch.tensor(self.valid_pred_epoch).to(self.device),
+                    torch.tensor(self.valid_pred_logit_epoch).to(self.device),
                     torch.tensor(self.valid_y_epoch).to(self.device),
                 ).item()
             elif self.config["loss_type"] in ["BCEFocal2WayLoss", "BCE2WayLoss"]:
@@ -665,20 +674,6 @@ class SEDTrainer(object):
                 average="samples",
                 zero_division=0,
             )
-            if self.valid_soundscape_idx is not None:
-                self.epoch_valid_loss[
-                    "valid/soundscape_f1_01_frame"
-                ] = metrics.f1_score(
-                    self.valid_y_epoch[self.valid_soundscape_idx] > 0,
-                    sigmoid(
-                        self.valid_pred_logitframe_epoch[self.valid_soundscape_idx].max(
-                            axis=1
-                        )
-                    )
-                    > 0.1,
-                    average="samples",
-                    zero_division=0,
-                )
         except ValueError:
             logging.warning("Raise ValueError: May be contain NaN in y_pred.")
             pass
@@ -747,7 +742,7 @@ class SEDTrainer(object):
             logging.info(f"Successfully saved checkpoint @ {self.steps} steps.")
 
     def _check_log_interval(self):
-        if self.steps % self.config["log_interval_steps"] == 0:
+        if (self.steps % self.config["log_interval_steps"] == 0) and (self.steps != 0):
             self._valid_epoch()
             for key in self.total_train_loss.keys():
                 self.total_train_loss[key] /= self.config["log_interval_steps"]

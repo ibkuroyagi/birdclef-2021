@@ -15,8 +15,8 @@ log() {
 verbose=1    # verbosity level, higher is more logging
 stage=0      # stage to start
 stop_stage=0 # stage to stop
-n_gpus=4     # number of gpus for training
-n_jobs=4     # number of parallel jobs in feature extraction
+n_gpus=2     # number of gpus for training
+n_jobs=2     # number of parallel jobs in feature extraction
 fold=0
 # directory related
 expdir=exp # directory to save experiments
