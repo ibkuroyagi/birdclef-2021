@@ -14,11 +14,11 @@ from utils import target_columns  # noqa: E402
 from utils import best_th  # noqa: E402
 
 
-BATCH_SIZE = 32
-split_sec = 20
+BATCH_SIZE = 64
+split_sec = 5
 outdir = f"dump/relabel{split_sec}sec"
 save_name = "b0_mixup2"
-SKIP_INFER = True
+SKIP_INFER = False
 if SKIP_INFER:
     pred_y_frame = np.load(os.path.join(outdir, save_name, "pred_y_frame.npy"))
     print(f"Successfully load pred_y_frame:{pred_y_frame.shape}.")
@@ -60,7 +60,7 @@ config = {
     # Dataset #
     ######################
     "transforms": {"valid": {"Normalize": {}}},
-    "period": 20,
+    "period": split_sec,
     "n_mels": 128,
     "fmin": 20,
     "fmax": 16000,
@@ -72,7 +72,7 @@ config = {
     ######################
     # Loaders #
     ######################
-    "loader_params": {"valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 2}},
+    "loader_params": {"valid": {"batch_size": BATCH_SIZE * 2, "num_workers": 4}},
     ######################
     # Model #
     ######################

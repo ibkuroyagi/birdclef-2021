@@ -11,8 +11,8 @@ log() {
 . ./path.sh || exit 1
 . ./cmd.sh || exit 1
 
-stage=1
-stop_stage=1
+stage=3
+stop_stage=3
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
@@ -36,4 +36,11 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
     # shellcheck disable=SC2086,SC2154
     ${train_cmd} --num_threads 2 --gpu 1 "relabel.log" \
         python relabel.py
+fi
+
+if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
+    echo "Start Stage 3 split ogg file"
+    # shellcheck disable=SC2086,SC2154
+    ${train_cmd} --num_threads 2 "split_ogg_file.log" \
+        python split_ogg_file.py
 fi

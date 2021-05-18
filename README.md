@@ -142,6 +142,9 @@ EOF
 - [ ] wavenetはmixupの後
 - [ ] resnet系列
 - [ ] https://github.com/Cadene/pretrained-models.pytorch#senet のse_resnext101_32x4dを変更する
+- train_soundscapeの49種類でのf1は？
+- b0+mixupの5sec
+- resnest50のアンサンブルの種作成5sec
 
 ### 実験結果からの気づき
 - 最適なlr

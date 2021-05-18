@@ -17,23 +17,23 @@ stage=0      # stage to start
 stop_stage=0 # stage to stop
 n_gpus=2     # number of gpus for training
 n_jobs=2     # number of parallel jobs in feature extraction
-fold=4
+fold=0
 # directory related
 expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
-resume="exp/train_b0_relabel/mixup3/best_score/best_scorefold${fold}bce.pkl"
-# resume=""
+# resume="exp/train_b0_relabel/mixup3/best_score/best_scorefold${fold}bce.pkl"
+resume=""
 # evaluation related
 train_file="train_b0_relabel"
 infer_file="infer_b0_relabel"
 
-save_name="maskbce"
+save_name="sec5"
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
 
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 0: Re-labeled Network training."
-    tag="${train_file}/mask_bce"
+    tag="${train_file}/sec5"
     outdir=${expdir}/${tag}
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Training start. See the progress via ${outdir}/${train_file}${save_name}${fold}.log"

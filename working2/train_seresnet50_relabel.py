@@ -29,7 +29,7 @@ from utils import mixup_apply_rate  # noqa: E402
 # from utils import pos_weight  # noqa: E402
 
 BATCH_SIZE = 32
-
+split_sec = 5
 # ## Config
 parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
@@ -127,7 +127,7 @@ config = {
         },
         "valid": {"Normalize": {}},
     },
-    "period": 20,
+    "period": split_sec,
     "n_mels": 128,
     "fmin": 20,
     "fmax": 16000,
@@ -162,8 +162,6 @@ config = {
     ######################
     "loss_type": "BCE2WayLoss",
     "loss_params": {"pos_weight": None},
-    # "loss_type": "BCEMasked",
-    # "loss_params": {},
     ######################
     # Optimizer #
     ######################
@@ -176,10 +174,10 @@ config = {
     "scheduler_params": {"T_max": 15, "eta_min": 5.0e-4},
 }
 config.update(vars(args))
-train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
+train_short_audio_df = pd.read_csv(f"dump/relabel{split_sec}sec/b0_mixup2/relabel.csv")
 train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 
-soundscape = pd.read_csv("dump/train_20sec_with_nocall.csv")
+soundscape = pd.read_csv(f"dump/train_{split_sec}sec_with_nocall.csv")
 use_nocall = True
 if use_nocall:
     soundscape = soundscape[soundscape["dataset"] == "train_soundscape"]
@@ -774,7 +772,6 @@ for i in range(5):
     val_idx = df["fold"] == i
     trn_df = df[trn_idx].reset_index(drop=True)
     val_df = df[val_idx].reset_index(drop=True)
-    valid_soundscape_idx = val_df["dataset"] == "train_soundscape"
     data_loader = {}
     for phase, df_, label in zip(
         ["valid", "train"], [val_df, trn_df], [y[val_idx], y[trn_idx]]
