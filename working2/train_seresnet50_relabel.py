@@ -28,7 +28,7 @@ from utils import mixup_apply_rate  # noqa: E402
 
 # from utils import pos_weight  # noqa: E402
 
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -103,7 +103,7 @@ config = {
     # Globals #
     ######################
     "seed": 1213,
-    "epochs": 30,
+    "epochs": 20,
     "train": True,
     "folds": [args.fold],
     "img_size": 128,
@@ -177,14 +177,13 @@ config = {
 }
 config.update(vars(args))
 train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
+train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
+
 soundscape = pd.read_csv("dump/train_20sec_with_nocall.csv")
 use_nocall = True
 if use_nocall:
     soundscape = soundscape[soundscape["dataset"] == "train_soundscape"]
 else:
-    train_short_audio_df = train_short_audio_df[
-        train_short_audio_df["birds"] != "nocall"
-    ]
     soundscape = soundscape[
         (soundscape["birds"] != "nocall")
         & (soundscape["dataset"] == "train_soundscape")

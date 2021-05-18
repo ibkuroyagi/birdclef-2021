@@ -13,9 +13,9 @@ log() {
 
 # basic setting
 verbose=1    # verbosity level, higher is more logging
-stage=1      # stage to start
-stop_stage=1 # stage to stop
-n_gpus=1     # number of gpus for training
+stage=0      # stage to start
+stop_stage=0 # stage to stop
+n_gpus=2     # number of gpus for training
 n_jobs=2     # number of parallel jobs in feature extraction
 fold=4
 # directory related
@@ -27,13 +27,13 @@ resume="exp/train_b0_relabel/mixup3/best_score/best_scorefold${fold}bce.pkl"
 train_file="train_b0_relabel"
 infer_file="infer_b0_relabel"
 
-save_name="bce"
+save_name="maskbce"
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
 
 if [ "${stage}" -le 0 ] && [ "${stop_stage}" -ge 0 ]; then
     log "Stage 0: Re-labeled Network training."
-    tag="${train_file}/mixup4"
+    tag="${train_file}/mask_bce"
     outdir=${expdir}/${tag}
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Training start. See the progress via ${outdir}/${train_file}${save_name}${fold}.log"

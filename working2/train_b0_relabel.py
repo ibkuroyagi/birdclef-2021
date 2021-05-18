@@ -27,7 +27,7 @@ from utils import sigmoid  # noqa: E402
 from utils import mixup_apply_rate  # noqa: E402
 from utils import pos_weight  # noqa: E402
 
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 
 # ## Config
 parser = argparse.ArgumentParser(
@@ -102,7 +102,7 @@ config = {
     # Globals #
     ######################
     "seed": 1213,
-    "epochs": 30,
+    "epochs": 10,
     "train": True,
     "folds": [args.fold],
     "img_size": 128,
@@ -160,10 +160,10 @@ config = {
     ######################
     # Criterion #
     ######################
-    "loss_type": "BCE2WayLoss",
-    "loss_params": {"pos_weight": pos_weight},
-    # "loss_type": "BCEMasked",
-    # "loss_params": {},
+    # "loss_type": "BCE2WayLoss",
+    # "loss_params": {"pos_weight": pos_weight},
+    "loss_type": "BCEMasked",
+    "loss_params": {},
     ######################
     # Optimizer #
     ######################
@@ -177,8 +177,9 @@ config = {
 }
 config.update(vars(args))
 train_short_audio_df = pd.read_csv("dump/relabel20sec/b0_mixup2/relabel.csv")
+train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 soundscape = pd.read_csv("exp/arai_infer_tf_efficientnet_b0_ns/no_aug/bce/train_y.csv")
-use_nocall = False
+use_nocall = True
 if use_nocall:
     soundscape = soundscape[soundscape["dataset"] == "train_soundscape"]
 else:
@@ -186,9 +187,7 @@ else:
         (soundscape["birds"] != "nocall")
         & (soundscape["dataset"] == "train_soundscape")
     ]
-    train_short_audio_df = train_short_audio_df[
-        train_short_audio_df["birds"] != "nocall"
-    ]
+
 df = pd.concat([train_short_audio_df, soundscape], axis=0).reset_index(drop=True)
 steps_per_epoch = len(df[df["fold"] != config["folds"][0]]) // (
     BATCH_SIZE * config["n_gpus"] * config["accum_grads"]
