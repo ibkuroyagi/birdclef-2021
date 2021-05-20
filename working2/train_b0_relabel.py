@@ -102,7 +102,7 @@ config = {
     # Globals #
     ######################
     "seed": 1213,
-    "epochs": 10,
+    "epochs": 20,
     "train": True,
     "folds": [args.fold],
     "img_size": 128,
@@ -139,7 +139,7 @@ config = {
     # Mixup #
     ######################
     "mixup_alpha": 0.2,  # if you don't use mixup, please input 0.
-    "mode": "cos",
+    "mode": "sin",
     "max_rate": 1.0,
     "min_rate": 0.0,
     ######################
@@ -161,7 +161,7 @@ config = {
     # Criterion #
     ######################
     "loss_type": "BCE2WayLoss",
-    "loss_params": {},
+    "loss_params": {"pos_weight": None},
     # "loss_params": {"pos_weight": pos_weight},
     # "loss_type": "BCEMasked",
     # "loss_params": {},

@@ -11,8 +11,8 @@ log() {
 . ./path.sh || exit 1
 . ./cmd.sh || exit 1
 
-stage=3
-stop_stage=3
+stage=4
+stop_stage=4
 
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
@@ -43,4 +43,11 @@ if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
     # shellcheck disable=SC2086,SC2154
     ${train_cmd} --num_threads 2 "split_ogg_file.log" \
         python split_ogg_file.py
+fi
+
+if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
+    echo "Start Stage 4 split 20 5"
+    # shellcheck disable=SC2086,SC2154
+    ${train_cmd} --num_threads 2 "split_20_5.log" \
+        python split_20_5.py
 fi

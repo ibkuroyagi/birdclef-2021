@@ -29,7 +29,7 @@ from utils import mixup_apply_rate  # noqa: E402
 # from utils import pos_weight  # noqa: E402
 
 BATCH_SIZE = 32
-split_sec = 5
+split_sec = 20
 # ## Config
 parser = argparse.ArgumentParser(
     description="Train outlier exposure model (See detail in asd_tools/bin/train.py)."
@@ -178,7 +178,7 @@ train_short_audio_df = pd.read_csv(f"dump/relabel{split_sec}sec/b0_mixup2/relabe
 train_short_audio_df = train_short_audio_df[train_short_audio_df["birds"] != "nocall"]
 
 soundscape = pd.read_csv(f"dump/train_{split_sec}sec_with_nocall.csv")
-use_nocall = True
+use_nocall = False
 if use_nocall:
     soundscape = soundscape[soundscape["dataset"] == "train_soundscape"]
 else:

@@ -1,3 +1,4 @@
+# %%
 import os
 import sys
 import soundfile as sf
@@ -16,9 +17,11 @@ from utils import best_th  # noqa: E402
 
 BATCH_SIZE = 64
 split_sec = 5
+if split_sec == 5:
+    threshold = [0.3, 0.1]
 outdir = f"dump/relabel{split_sec}sec"
 save_name = "b0_mixup2"
-SKIP_INFER = False
+SKIP_INFER = True
 if SKIP_INFER:
     pred_y_frame = np.load(os.path.join(outdir, save_name, "pred_y_frame.npy"))
     print(f"Successfully load pred_y_frame:{pred_y_frame.shape}.")
@@ -221,16 +224,34 @@ if not SKIP_INFER:
     print("Successfully saved pred_y_frame.npy")
 
 nocall_idx = np.zeros(len(y)).astype(bool)
+
 for i, bird in enumerate(target_columns):
     if bird in few_birds:
         continue
-    nocall_idx |= (train_short_audio_df["birds"] == bird) & (
-        pred_y_frame[:, i] < best_th[i]
-    )
+    if split_sec == 20:
+        nocall_idx |= (train_short_audio_df["birds"] == bird) & (
+            pred_y_frame[:, i] < best_th[i]
+        )
+    else:
+        nocall_idx |= (train_short_audio_df["birds"] == bird) & (
+            pred_y_frame[:, i] < threshold
+        )
 print(f"N nocall: {nocall_idx.sum()} / {len(nocall_idx)}")
 new_train_short_audio_df = train_short_audio_df.copy()
 new_train_short_audio_df.loc[nocall_idx, "birds"] = "nocall"
-new_train_short_audio_df.to_csv(
-    os.path.join(outdir, save_name, "relabel.csv"), index=False
-)
+# new_train_short_audio_df.to_csv(
+#     os.path.join(outdir, save_name, "relabel.csv"), index=False
+# )
 print(f"Successfully saved at {os.path.join(outdir, save_name, 'relabel.csv')}")
+
+# %%
+print(new_train_short_audio_df["birds"].value_counts()[:50])
+# %%
+print(
+    new_train_short_audio_df[new_train_short_audio_df["birds"] != "nocall"][
+        "fold"
+    ].value_counts()
+)
+
+# %%
+
