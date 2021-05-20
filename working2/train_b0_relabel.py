@@ -27,7 +27,7 @@ from utils import sigmoid  # noqa: E402
 from utils import mixup_apply_rate  # noqa: E402
 from utils import pos_weight  # noqa: E402
 
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 split_sec = 5
 # ## Config
 parser = argparse.ArgumentParser(
