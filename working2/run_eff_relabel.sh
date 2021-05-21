@@ -57,7 +57,7 @@ fi
 
 if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
     log "Stage 1: Re-labeled Network inference."
-    tag="${infer_file}/mixup3"
+    tag="${infer_file}/sec5"
     outdir=${expdir}/${tag}
     resume=""
     for i in {0..4}; do

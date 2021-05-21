@@ -13,8 +13,8 @@ log() {
 
 # basic setting
 verbose=1    # verbosity level, higher is more logging
-stage=0      # stage to start
-stop_stage=0 # stage to stop
+stage=1      # stage to start
+stop_stage=1 # stage to stop
 n_gpus=2     # number of gpus for training
 n_jobs=2     # number of parallel jobs in feature extraction
 fold=4
@@ -57,10 +57,10 @@ fi
 
 if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
     log "Stage 1: Re-labeled Network inference."
-    tag="${infer_file}/mixup"
+    tag="${infer_file}/wo_nocall2"
     outdir=${expdir}/${tag}
     for i in {0..4}; do
-        resume+="exp/train_seresnet50_relabel/mixup/best_score/best_scorefold${i}bce.pkl "
+        resume+="exp/train_seresnet50_relabel/wo_nocall2/best_score/best_scorefold${i}bce.pkl "
     done
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Inference start. See the progress via ${outdir}/${infer_file}${save_name}.log"
