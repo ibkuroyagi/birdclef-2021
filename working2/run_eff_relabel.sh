@@ -17,17 +17,18 @@ stage=0      # stage to start
 stop_stage=0 # stage to stop
 n_gpus=1     # number of gpus for training
 n_jobs=2     # number of parallel jobs in feature extraction
-fold=0
+fold=2
 # directory related
 expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
-# resume=""
+
 # evaluation related
-train_file="train_b0_relabel"
+train_file="train_eff_b3_relabel"
 infer_file="infer_b0_relabel"
 
 save_name="sec5"
-resume="exp/train_b0_relabel/sec5/best_score/best_scorefold${fold}${save_name}.pkl"
+resume=""
+# resume="exp/train_b0_relabel/sec5/best_score/best_scorefold${fold}${save_name}.pkl"
 . ./utils/parse_options.sh || exit 1
 set -euo pipefail
 

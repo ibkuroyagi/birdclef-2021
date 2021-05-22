@@ -153,7 +153,7 @@ config = {
     ######################
     # Model #
     ######################
-    "base_model_name": "tf_efficientnet_b0_ns",
+    "base_model_name": "tf_efficientnet_b3_ns",
     "pooling": "max",
     "pretrained": True,
     "n_target": 397,
@@ -407,9 +407,9 @@ class SEDTrainer(object):
             logging.info(
                 f"Steps:{self.steps}, Epochs:{self.epochs}, BEST score:{self.best_score}"
             )
-            # self.steps = 0
-            # self.epochs = 0
-            # self.best_score = 0
+            self.steps = 0
+            self.epochs = 0
+            self.best_score = 0
             if (self.optimizer is not None) and (
                 state_dict.get("optimizer", None) is not None
             ):
@@ -543,6 +543,7 @@ class SEDTrainer(object):
     def _valid_step(self, batch):
         """Evaluate model one step."""
         x = batch["X"].to(self.device)
+        y_clip = batch["y"].to(self.device)
         y_ = self.model(x)
         self.valid_pred_logit_epoch = np.concatenate(
             [
@@ -552,7 +553,8 @@ class SEDTrainer(object):
             axis=0,
         )
         self.valid_y_epoch = np.concatenate(
-            [self.valid_y_epoch, batch["y"].numpy().astype(np.float32)], axis=0,
+            [self.valid_y_epoch, y_clip.detach().cpu().numpy().astype(np.float32)],
+            axis=0,
         )
 
     def _valid_epoch(self):
@@ -568,6 +570,9 @@ class SEDTrainer(object):
             # valid one step
             self._valid_step(batch)
         try:
+            self.epoch_valid_loss["valid/epoch_loss"] = self.epoch_valid_loss[
+                "valid/epoch_main_loss"
+            ]
             self.epoch_valid_loss["valid/epoch_f1_02_frame"] = metrics.f1_score(
                 self.valid_y_epoch > 0,
                 sigmoid(self.valid_pred_logit_epoch) > 0.2,
@@ -611,7 +616,7 @@ class SEDTrainer(object):
 
         # reset
         self.epoch_valid_loss = defaultdict(float)
-        self.valid_pred_epoch = np.empty((0, self.n_target))
+        self.valid_y_epoch = np.empty((0, self.n_target))
         self.valid_pred_logit_epoch = np.empty((0, self.config["n_target"]))
         # restore mode
         self.model.training = True
