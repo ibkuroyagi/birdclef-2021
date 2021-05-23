@@ -13,18 +13,18 @@ log() {
 
 # basic setting
 verbose=1    # verbosity level, higher is more logging
-stage=0      # stage to start
-stop_stage=0 # stage to stop
+stage=1      # stage to start
+stop_stage=1 # stage to stop
 n_gpus=1     # number of gpus for training
 n_jobs=2     # number of parallel jobs in feature extraction
-fold=2
+fold=4
 # directory related
 expdir=exp # directory to save experiments
 # tag for manangement of the naming of experiments
 
 # evaluation related
-train_file="train_eff_b3_relabel"
-infer_file="infer_b0_relabel"
+train_file="train_eff_b0_relabel"
+infer_file="infer_eff_b0_relabel"
 
 save_name="sec5"
 resume=""
@@ -62,7 +62,7 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
     outdir=${expdir}/${tag}
     resume=""
     for i in {0..4}; do
-        resume+="exp/train_b0_relabel/mixup3/best_score/best_scorefold${i}bce.pkl "
+        resume+="exp/train_b0_relabel/sec5/best_score/best_scorefold${i}sec5.pkl "
     done
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Inference start. See the progress via ${outdir}/${infer_file}${save_name}.log"
