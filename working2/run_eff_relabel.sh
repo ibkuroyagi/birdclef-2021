@@ -62,7 +62,7 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
     outdir=${expdir}/${tag}
     resume=""
     for i in {0..4}; do
-        resume+="exp/train_b0_relabel/sec5/best_score/best_scorefold${i}sec5.pkl "
+        resume+="exp/train_eff_b0_relabel/sec5/best_score/best_scorefold${i}sec5.pkl "
     done
     [ ! -e "${outdir}" ] && mkdir -p "${outdir}"
     log "Inference start. See the progress via ${outdir}/${infer_file}${save_name}.log"
