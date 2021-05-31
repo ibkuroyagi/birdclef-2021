@@ -77,4 +77,4 @@ def mixup_for_sed(X: torch.tensor, Y: torch.tensor, alpha=0.2):
             ).to(X.device)[:, None]
             mixed_X = lam * X + (1 - lam) * X[perm]
             mixed_Y = lam * Y + (1 - lam) * Y[perm]
-    return mixed_X, mixed_Y
+    return mixed_X.float(), mixed_Y.float()

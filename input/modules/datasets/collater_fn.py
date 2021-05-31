@@ -354,14 +354,14 @@ class WaveTrainCollater(object):
         # convert each batch to tensor, assume that each item in batch has the same length
         batch = {}
         # (B, T)
-        batch["X"] = torch.tensor(wave_batch, dtype=torch.float)
+        batch["X"] = torch.tensor(wave_batch, dtype=torch.float32)
         # (B, l_target, n_class)
-        batch["y_frame"] = torch.tensor(frame_batch, dtype=torch.float)
+        batch["y_frame"] = torch.tensor(frame_batch, dtype=torch.float32)
         # (B, n_class)
-        batch["y_clip"] = torch.tensor(clip_batch, dtype=torch.float)
+        batch["y_clip"] = torch.tensor(clip_batch, dtype=torch.float32)
         if self.use_dializer:
             # (B, l_target, 1)
-            batch["frame_mask"] = torch.tensor(frame_mask_batch, dtype=torch.float)
+            batch["frame_mask"] = torch.tensor(frame_mask_batch, dtype=torch.float32)
         return batch
 
 
@@ -409,7 +409,7 @@ class WaveEvalCollater(object):
             wave_batch = [
                 wave[start_frame[j] : end_frame[j]] for j, wave in enumerate(waves)
             ]
-            items[f"X{i}"] = torch.tensor(wave_batch, dtype=torch.float)  # (B, T)
+            items[f"X{i}"] = torch.tensor(wave_batch, dtype=torch.float32)  # (B, T)
 
         if self.is_label:
             all_time_list = [b["time_list"] for b in batch]
@@ -418,5 +418,5 @@ class WaveEvalCollater(object):
                 y_clip = np.zeros(self.n_class)
                 y_clip[time_list[:, 2].astype(int)] = 1.0
                 clip_batch.append(y_clip.astype(np.float32))
-            items["y_clip"] = torch.tensor(clip_batch, dtype=torch.float)
+            items["y_clip"] = torch.tensor(clip_batch, dtype=torch.float32)
         return items
